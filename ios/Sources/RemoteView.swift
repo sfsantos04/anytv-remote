@@ -16,6 +16,7 @@ struct RemoteView: View {
     init(device: TVDevice) {
         self.device = device
         _client = StateObject(wrappedValue: TVClient(proto: device.proto,
+                                                     host: device.host,
                                                      token: device.token,
                                                      mac: device.mac))
     }
@@ -180,7 +181,15 @@ struct RemoteView: View {
                 if parts.count > 2, !parts[2].isEmpty { info = "\(parts[0]) - \(parts[2])" }
             }
             let token = client.storedToken()
-            if !token.isEmpty { updated.token = token }
+            if !token.isEmpty {
+                updated.token = token
+                TokenVault.save(token, host: device.host, proto: device.proto)
+                if device.proto == .tizen || device.proto == .webos {
+                    status += " Token guardado (não pede Permitir de novo)."
+                }
+            } else if device.proto == .tizen || device.proto == .webos {
+                status += " Sem token salvo: a TV vai pedir Permitir agora."
+            }
             let mac = client.discoveredMac()
             if !mac.isEmpty { updated.mac = mac }
             store.update(updated)

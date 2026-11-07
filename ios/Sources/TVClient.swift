@@ -17,20 +17,42 @@ enum TVClientError: LocalizedError {
     }
 }
 
-/// Blocking C client (ADB, Roku ECP, webOS, Tizen) driven from a serial queue.
+
+/// Tokens (Samsung token, webOS client-key) guardados por IP, fora do registro do
+/// aparelho: se a lista de dispositivos for recriada, o pareamento nao se perde e
+/// a TV deixa de pedir "Permitir" a cada uso.
+enum TokenVault {
+    private static func key(_ host: String, _ proto: TVProto) -> String {
+        "anytv.token.\(proto.rawValue).\(host)"
+    }
+
+    static func load(host: String, proto: TVProto) -> String {
+        UserDefaults.standard.string(forKey: key(host, proto)) ?? ""
+    }
+
+    static func save(_ token: String, host: String, proto: TVProto) {
+        guard !token.isEmpty else { return }
+        UserDefaults.standard.set(token, forKey: key(host, proto))
+    }
+}
+
+/// Blocking C client (ADB, Roku ECP, webOS, Tizen) driven by a serial queue.
 final class TVClient: ObservableObject, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.samflix.anytv.client")
     private var handle: OpaquePointer?
 
     let proto: TVProto
+    private let host: String
 
-    init(proto: TVProto, token: String = "", mac: String = "") {
+    init(proto: TVProto, host: String = "", token: String = "", mac: String = "") {
         self.proto = proto
+        self.host = host
         handle = anytv_client_new_proto(Int32(proto.rawValue))
         if let handle {
             if proto == .adb { loadOrGenerateKey(handle) }
-            if !token.isEmpty {
-                token.withCString { anytv_client_set_token(handle, $0) }
+            let effective = token.isEmpty ? TokenVault.load(host: host, proto: proto) : token
+            if !effective.isEmpty {
+                effective.withCString { anytv_client_set_token(handle, $0) }
             }
             if !mac.isEmpty {
                 mac.withCString { anytv_client_set_mac(handle, $0) }

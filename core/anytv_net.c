@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <time.h>
 #include <arpa/inet.h>
 #include <netdb.h>
 
@@ -236,4 +237,53 @@ int net_wol(const char *mac, int port) {
                           (struct sockaddr *)&dest, sizeof(dest));
     close(fd);
     return sent == (ssize_t)sizeof(packet) ? NET_OK : NET_ERR_IO;
+}
+
+/* A TV on Wi-Fi often ignores the global broadcast and only wakes from the
+ * subnet-directed broadcast or a unicast to its current address, and some
+ * firmwares listen on 7 instead of 9, so all of them are sent three times. */
+int net_wol_full(const char *mac, const char *ip, int port) {
+    uint8_t addr[6];
+    if (net_parse_mac(mac, addr) != 0) return NET_ERR_PROTO;
+
+    uint8_t packet[102];
+    memset(packet, 0xff, 6);
+    for (int i = 0; i < 16; i++) memcpy(packet + 6 + i * 6, addr, 6);
+
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) return NET_ERR_IO;
+    int broadcast = 1;
+    setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast));
+
+    uint32_t targets[3];
+    int count = 0;
+    targets[count++] = htonl(INADDR_BROADCAST);
+    if (ip && ip[0]) {
+        struct in_addr a;
+        if (inet_pton(AF_INET, ip, &a) == 1) {
+            uint32_t host = ntohl(a.s_addr);
+            targets[count++] = htonl((host & 0xffffff00u) | 0xffu); /* x.x.x.255 */
+            targets[count++] = a.s_addr;                            /* unicast */
+        }
+    }
+    int ports[2] = { port > 0 ? port : 9, 7 };
+    int sent_any = 0;
+    for (int round = 0; round < 3; round++) {
+        for (int t = 0; t < count; t++) {
+            for (int pi = 0; pi < 2; pi++) {
+                struct sockaddr_in dest;
+                memset(&dest, 0, sizeof(dest));
+                dest.sin_family = AF_INET;
+                dest.sin_port = htons((uint16_t)ports[pi]);
+                dest.sin_addr.s_addr = targets[t];
+                ssize_t sent = sendto(fd, packet, sizeof(packet), 0,
+                                      (struct sockaddr *)&dest, sizeof(dest));
+                if (sent == (ssize_t)sizeof(packet)) sent_any = 1;
+            }
+        }
+        struct timespec pause = { .tv_sec = 0, .tv_nsec = 120 * 1000 * 1000 };
+        nanosleep(&pause, NULL);
+    }
+    close(fd);
+    return sent_any ? NET_OK : NET_ERR_IO;
 }

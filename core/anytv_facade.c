@@ -1007,7 +1007,7 @@ int anytv_client_power_on(anytv_client *c) {
         snprintf(c->error, sizeof(c->error), "MAC desconhecido: informe o MAC da TV para ligar");
         return ADB_ERR_PROTOCOL;
     }
-    return net_wol(c->ctx.mac, 9) == NET_OK ? 0 : ADB_ERR_IO;
+    return net_wol_full(c->ctx.mac, c->ctx.host, 9) == NET_OK ? 0 : ADB_ERR_IO;
 }
 
 int anytv_client_sleep(anytv_client *c) {

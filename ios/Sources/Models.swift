@@ -151,7 +151,16 @@ final class DeviceStore: ObservableObject {
         if let index = devices.firstIndex(where: { $0.id == device.id }) {
             devices[index] = device
             save()
+            return
         }
+        // aparelho que veio da descoberta sem estar na lista: guarda agora, senao
+        // o token/conhecimento do pareamento se perde a cada uso
+        if let index = devices.firstIndex(where: { $0.host == device.host && $0.proto == device.proto }) {
+            devices[index] = device
+        } else {
+            devices.append(device)
+        }
+        save()
     }
 
     func remove(at offsets: IndexSet) {

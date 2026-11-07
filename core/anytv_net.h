@@ -33,6 +33,8 @@ int http_request(const char *host, int port, const char *method, const char *pat
 
 /* Wake-on-LAN magic packet on the broadcast address. */
 int net_wol(const char *mac, int port);
+/* broadcast global + broadcast de sub-rede + unicast, nas portas 9 e 7 */
+int net_wol_full(const char *mac, const char *ip, int port);
 
 /* "aa:bb:cc:dd:ee:ff" or "aabbccddeeff" -> 6 bytes. Returns 0 on success. */
 int net_parse_mac(const char *text, uint8_t out[6]);
