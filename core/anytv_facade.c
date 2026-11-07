@@ -136,6 +136,14 @@ int anytv_client_connect(anytv_client *c, const char *host, int port,
     }
     case ANYTV_PROTO_TIZEN: {
         int rc = tizen_connect(&c->ctx, timeout_ms);
+        if (rc != NET_OK && c->ctx.mac[0]) {
+            /* A sleeping Samsung closes the remote channel; wake it and retry once
+             * instead of failing straight away. */
+            net_wol(c->ctx.mac, 9);
+            struct timespec pause = { .tv_sec = 6, .tv_nsec = 0 };
+            nanosleep(&pause, NULL);
+            rc = tizen_connect(&c->ctx, timeout_ms);
+        }
         if (rc != NET_OK) {
             /* The remote channel dies when the TV sleeps; the development bridge
              * keeps answering, so apps and launching still work. */
