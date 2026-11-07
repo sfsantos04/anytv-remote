@@ -72,44 +72,60 @@ static int open_pointer(proto_ctx *c, int timeout_ms) {
 }
 
 int webos_connect(proto_ctx *c, int timeout_ms) {
-    char err[160];
-    if (ws_connect(&c->ws, c->host, c->port, "/", 0, timeout_ms, err, sizeof(err)) != WS_OK) {
-        snprintf(c->last_error, sizeof(c->last_error), "%s", err);
-        return NET_ERR_CONNECT;
-    }
     char manifest[512];
     snprintf(manifest, sizeof(manifest),
              "\"manifest\":{\"manifestVersion\":1,\"appVersion\":\"1.0\","
              "\"signed\":{\"created\":\"20240101\",\"appId\":\"com.samflix.anytv\","
              "\"vendorId\":\"com.samflix\",\"localizedAppNames\":{},\"permissions\":[]}}");
 
-    char msg[1024];
-    snprintf(msg, sizeof(msg),
-             "{\"id\":\"register_0\",\"type\":\"register\",\"payload\":{"
-             "\"forcePairing\":false,\"pairingType\":\"PROMPT\",\"client-key\":\"%s\",%s}}",
-             c->token, manifest);
-    if (ws_send_text(&c->ws, msg) != WS_OK) return NET_ERR_IO;
-
+    /* LG models differ: 3000 plain on most, 3001 with TLS on the secure ones.
+     * A candidate only counts when the TV answers "registered". */
+    int cand_port[4] = {c->port, c->port, 3000, 3001};
+    int cand_tls[4] = {0, 1, 0, 1};
     char reply[4096];
-    /* the answer comes after the user accepts the pairing prompt on the TV */
-    int wait_ms = timeout_ms > 60000 ? timeout_ms : 60000;
-    int got = ws_recv_text(&c->ws, reply, sizeof(reply), wait_ms);
-    if (got < 0) return got == WS_ERR_TIMEOUT ? NET_ERR_TIMEOUT : NET_ERR_IO;
-
-    if (strstr(reply, "registered")) {
+    for (int i = 0; i < 4; i++) {
+        int dup = 0;
+        for (int j = 0; j < i; j++) {
+            if (cand_port[j] == cand_port[i] && cand_tls[j] == cand_tls[i]) dup = 1;
+        }
+        if (dup) continue;
+        char err[160];
+        int attempt_timeout = cand_tls[i] ? 2500 : timeout_ms;
+        if (ws_connect(&c->ws, c->host, cand_port[i], "/", cand_tls[i],
+                       attempt_timeout, err, sizeof(err)) != WS_OK) {
+            snprintf(c->last_error, sizeof(c->last_error), "%s", err);
+            continue;
+        }
+        char msg[1024];
+        snprintf(msg, sizeof(msg),
+                 "{\"id\":\"register_0\",\"type\":\"register\",\"payload\":{"
+                 "\"forcePairing\":false,\"pairingType\":\"PROMPT\",\"client-key\":\"%s\",%s}}",
+                 c->token, manifest);
+        if (ws_send_text(&c->ws, msg) != WS_OK) {
+            ws_close(&c->ws);
+            continue;
+        }
+        /* the answer comes after the user accepts the pairing prompt on the TV */
+        int wait_ms = (i == 0) ? 60000 : 8000;
+        int got = ws_recv_text(&c->ws, reply, sizeof(reply), wait_ms);
+        if (got < 0 || !strstr(reply, "registered")) {
+            snprintf(c->last_error, sizeof(c->last_error), "%s",
+                     got < 0 ? "sem resposta ao pareamento" : "TV recusou o pareamento");
+            ws_close(&c->ws);
+            continue;
+        }
         char key[256];
         if (json_string(reply, "client-key", key, sizeof(key)) == 0 && key[0]) {
             snprintf(c->token, sizeof(c->token), "%s", key);
         }
-    } else {
-        /* 401 = needs the pairing prompt; the TV shows it and answers later */
-        return NET_ERR_CONNECT;
+        c->port = cand_port[i];
+        c->connected = 1;
+        if (open_pointer(c, timeout_ms) != NET_OK) {
+            return NET_ERR_PROTO;
+        }
+        return NET_OK;
     }
-    c->connected = 1;
-    if (open_pointer(c, timeout_ms) != NET_OK) {
-        return NET_ERR_PROTO;
-    }
-    return NET_OK;
+    return NET_ERR_CONNECT;
 }
 
 int webos_cmd(proto_ctx *c, anytv_cmd cmd) {

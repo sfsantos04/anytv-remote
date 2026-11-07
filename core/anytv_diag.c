@@ -85,6 +85,92 @@ static void ssdp_scan(const char *unicast_target, const char *st_query, int wait
     (void)deadline;
 }
 
+/* mDNS: Android publishes its ADB endpoints as _adb-tls-connect._tcp and
+ * _adb-tls-pairing._tcp, so asking mDNS reveals the real port. */
+static void mdns_scan(const char *single_name) {
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0) { printf("mdns: socket falhou\n"); return; }
+    int reuse = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    struct sockaddr_in dest;
+    memset(&dest, 0, sizeof(dest));
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(5353);
+    dest.sin_addr.s_addr = inet_addr("224.0.0.251");
+    unsigned char ttl = 2;
+    setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl));
+
+    static const char *NAMES[] = {
+        "_adb-tls-connect._tcp.local",
+        "_adb-tls-pairing._tcp.local",
+        "_adb._tcp.local",
+        "_androidtvremote2._tcp.local",
+    };
+    uint8_t pkt[512];
+    int total = single_name ? 1 : 4;
+    for (int n = 0; n < total; n++) {
+        const char *name = single_name ? single_name : NAMES[n];
+        size_t len = strlen(name);
+        memset(pkt, 0, sizeof(pkt));
+        pkt[0] = 0; pkt[1] = 0;          /* id */
+        pkt[2] = 0; pkt[3] = 0;          /* flags: standard query */
+        pkt[4] = 0; pkt[5] = 1;          /* qdcount */
+        pkt[12] = 12;                    /* name: length 12? built below */
+        size_t off = 12;
+        const char *p = NAMES[n];
+        while (*p) {
+            const char *dot = strchr(p, '.');
+            size_t seg = dot ? (size_t)(dot - p) : strlen(p);
+            if (seg == 0 || seg > 63) break;
+            pkt[off++] = (uint8_t)seg;
+            memcpy(pkt + off, p, seg);
+            off += seg;
+            p = dot ? dot + 1 : p + seg;
+        }
+        pkt[off++] = 0;
+        pkt[off++] = 0; pkt[off++] = 12;  /* PTR */
+        pkt[off++] = 0; pkt[off++] = 1;   /* IN */
+        (void)len;
+        for (int i = 0; i < 2; i++) {
+            sendto(fd, pkt, off, 0, (struct sockaddr *)&dest, sizeof(dest));
+        }
+    }
+
+    printf("mdns: procurando servicos ADB por 4s...\n");
+    for (int tick = 0; tick < 40; tick++) {
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        if (poll(&pfd, 1, 100) <= 0) continue;
+        uint8_t buf[2048];
+        struct sockaddr_in from;
+        socklen_t flen = sizeof(from);
+        ssize_t got = recvfrom(fd, buf, sizeof(buf), 0, (struct sockaddr *)&from, &flen);
+        if (got <= 0) continue;
+        char ip[32];
+        snprintf(ip, sizeof(ip), "%s", inet_ntoa(from.sin_addr));
+        /* printable strings inside the answer carry the service name */
+        char text[512] = "";
+        size_t to = 0;
+        for (ssize_t i = 0; i < got && to + 1 < sizeof(text); i++) {
+            char ch = (char)buf[i];
+            if (ch >= 32 && ch < 127) text[to++] = ch;
+            else if (to > 0 && text[to - 1] != ' ') text[to++] = ' ';
+        }
+        text[to] = 0;
+        if (!strstr(text, "_adb") && !strstr(text, "_androidtv")) continue;
+        printf("%-16s %s\n", ip, text);
+        /* SRV answers carry the port as two bytes right after 6 bytes of rdata */
+        for (ssize_t i = 0; i + 8 < got; i++) {
+            if (buf[i] == 0x00 && buf[i + 1] == 0x21 && buf[i + 2] == 0x00 &&
+                buf[i + 3] == 0x01) {
+                unsigned port = ((unsigned)buf[i + 8] << 8) | buf[i + 9];
+                if (port > 0 && port < 65536) printf("                 porta SRV=%u\n", port);
+            }
+        }
+    }
+    close(fd);
+}
+
+
 typedef struct {
     int port;
     const char *name;
@@ -154,6 +240,10 @@ int main(int argc, char **argv) {
         printf("uso: %s <ip> [ip ...]\n", argv[0]);
         printf("     %s --ssdp [ip-unicast]\n", argv[0]);
         return 2;
+    }
+    if (!strcmp(argv[1], "--mdns")) {
+        mdns_scan(argc > 2 ? argv[2] : NULL);
+        return 0;
     }
     if (!strcmp(argv[1], "--ssdp")) {
         const char *target = (argc > 2 && strcmp(argv[2], "-") != 0) ? argv[2] : NULL;
