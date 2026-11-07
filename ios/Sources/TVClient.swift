@@ -195,7 +195,7 @@ final class TVClient: ObservableObject, @unchecked Sendable {
                 appID.withCString { anytv_client_app_icon(handle, $0, out.baseAddress, out.count) }
             }
             guard got > 0 else { return nil }
-            return Data(buffer[0..<got])
+            return Data(buffer[0..<Int(got)])
         }
     }
 
