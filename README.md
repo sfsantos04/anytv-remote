@@ -16,6 +16,20 @@ e `screencap` na TV.
 - Descoberta por varredura da /24 na porta 5555, ou IP manual.
 - Chave RSA-2048 gerada no aparelho e guardada no Keychain; a TV autoriza uma vez.
 
+## Protocolos suportados
+
+| Plataforma | Porta | Controle | Lista de apps | Abrir app | Tela | Ligar |
+|---|---|---|---|---|---|---|
+| Android TV / box (ADB) | 5555 | sim | sim | sim | sim (PNG ~1 fps) | sim |
+| Roku / Roku TV (ECP) | 8060 | sim | sim | sim | nao | sim (WoL com o MAC que o ECP informa) |
+| LG webOS (SSAP) | 3000 | sim | sim | sim | nao | sim (WoL, MAC informado) |
+| Samsung Tizen | 8001 | sim | nao exposta | nao | nao | nao (token/`KEY_POWER` desliga) |
+
+Cada aparelho guarda o proprio token: `client-key` no LG, token de 8 digitos no
+Samsung, chave RSA no Android. A tela de descoberta testa as quatro portas e
+rotula o protocolo; os botoes que aquele protocolo nao tem simplesmente nao
+aparecem.
+
 ## Diferenca para o app oficial
 
 O app do Google so funciona em aparelhos certificados com o servico remoto dele.

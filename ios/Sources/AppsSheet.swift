@@ -2,8 +2,10 @@ import SwiftUI
 
 struct AppsSheet: View {
     let client: TVClient
+    let canLaunch: Bool
+
     @Environment(\.dismiss) private var dismiss
-    @State private var apps: [String] = []
+    @State private var apps: [(String, String)] = []
     @State private var loading = true
     @State private var message = ""
 
@@ -13,15 +15,17 @@ struct AppsSheet: View {
                 if !message.isEmpty {
                     Text(message).font(.footnote).foregroundStyle(.secondary)
                 }
-                ForEach(apps, id: \.self) { package in
+                ForEach(apps, id: \.0) { app in
                     Button {
-                        launch(package)
+                        launch(app.0)
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(prettifyPackage(package)).foregroundStyle(.primary)
-                            Text(package).font(.caption2).foregroundStyle(.secondary)
+                            Text(app.1.isEmpty ? prettifyName(app.0) : app.1)
+                                .foregroundStyle(.primary)
+                            Text(app.0).font(.caption2).foregroundStyle(.secondary)
                         }
                     }
+                    .disabled(!canLaunch)
                 }
             }
             .overlay {
@@ -47,20 +51,22 @@ struct AppsSheet: View {
             let list = try await client.apps()
             apps = list
             loading = false
-            if list.isEmpty {
-                message = "A TV nao devolveu apps com activity de launcher."
-            }
+            if list.isEmpty { message = "A TV nao devolveu nenhum app." }
         } catch {
             loading = false
             message = "Falhou: \(error.localizedDescription)"
         }
     }
 
-    private func launch(_ package: String) {
+    private func launch(_ appID: String) {
+        guard canLaunch else {
+            message = "Este protocolo nao permite abrir app pelo controle."
+            return
+        }
         Task {
             do {
-                try await client.launch(package)
-                message = "Abrindo \(prettifyPackage(package)) na TV."
+                try await client.launch(appID)
+                message = "Abrindo na TV."
             } catch {
                 message = "Falhou: \(error.localizedDescription)"
             }

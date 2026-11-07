@@ -3,7 +3,8 @@ import SwiftUI
 struct RemoteView: View {
     let device: TVDevice
 
-    @StateObject private var client = TVClient()
+    @StateObject private var client: TVClient
+    @EnvironmentObject private var store: DeviceStore
     @State private var status = "Conectando..."
     @State private var connected = false
     @State private var info = ""
@@ -11,18 +12,25 @@ struct RemoteView: View {
     @State private var showApps = false
     @State private var showScreen = false
 
+    init(device: TVDevice) {
+        self.device = device
+        _client = StateObject(wrappedValue: TVClient(proto: device.proto,
+                                                     token: device.token,
+                                                     mac: device.mac))
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
                 header
                 statusBar
                 dpad
-                controlRow([("VOL-", TvKey.volumeDown), ("MUTE", TvKey.mute), ("VOL+", TvKey.volumeUp)])
-                controlRow([("MENU", TvKey.menu), ("HOME", TvKey.home), ("BACK", TvKey.back)])
-                controlRow([("|<", TvKey.mediaPrevious), ("PLAY", TvKey.playPause), (">|", TvKey.mediaNext)])
-                controlRow([("ENTRADA", TvKey.tvInput), ("INFO", TvKey.info), ("AJUSTES", TvKey.settings)])
+                controlRow([("VOL-", .volDown), ("MUTE", .mute), ("VOL+", .volUp)])
+                controlRow([("MENU", .menu), ("HOME", .home), ("BACK", .back)])
+                controlRow([("|<", .prev), ("PLAY", .playPause), (">|", .next)])
+                controlRow([("ENTRADA", .input), ("INFO", .info), ("AJUSTES", .settings)])
                 powerRow
-                textInput
+                if client.supports(Cap.text) { textInput }
                 Spacer(minLength: 8)
             }
             .padding()
@@ -31,23 +39,29 @@ struct RemoteView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                Button { showApps = true } label: { Image(systemName: "square.grid.2x2") }
-                    .disabled(!connected)
-                Button { showScreen = true } label: { Image(systemName: "rectangle.on.rectangle") }
-                    .disabled(!connected)
+                if client.supports(Cap.apps) {
+                    Button { showApps = true } label: { Image(systemName: "square.grid.2x2") }
+                        .disabled(!connected)
+                }
+                if client.supports(Cap.screen) {
+                    Button { showScreen = true } label: { Image(systemName: "rectangle.on.rectangle") }
+                        .disabled(!connected)
+                }
             }
         }
-        .sheet(isPresented: $showApps) { AppsSheet(client: client) }
+        .sheet(isPresented: $showApps) {
+            AppsSheet(client: client, canLaunch: client.supports(Cap.launch))
+        }
         .sheet(isPresented: $showScreen) { ScreenSheet(client: client) }
         .task { await connect() }
     }
 
     private var header: some View {
         VStack(spacing: 4) {
-            Text(info.isEmpty ? device.host : info)
+            Text(info.isEmpty ? device.proto.title : info)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-            Text("\(device.host):\(device.port)")
+            Text("\(device.host):\(device.port) - \(device.proto.title)")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
@@ -61,16 +75,14 @@ struct RemoteView: View {
                 .frame(width: 8, height: 8)
             Text(status)
                 .font(.footnote)
-                .lineLimit(3)
+                .lineLimit(4)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            if !connected {
-                Button("Reconectar") {
-                    Task { await connect() }
-                }
-                .font(.footnote)
-                .buttonStyle(.bordered)
+            Button(connected ? "Testar" : "Reconectar") {
+                Task { await connect() }
             }
+            .font(.footnote)
+            .buttonStyle(.bordered)
         }
         .padding(10)
         .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
@@ -78,31 +90,33 @@ struct RemoteView: View {
 
     private var dpad: some View {
         VStack(spacing: 8) {
-            KeyCap(label: "▲") { send(TvKey.dpadUp) }
+            KeyCap(label: "▲") { send(.up) }
             HStack(spacing: 8) {
-                KeyCap(label: "◀") { send(TvKey.dpadLeft) }
-                KeyCap(label: "OK", prominent: true) { send(TvKey.dpadCenter) }
-                KeyCap(label: "▶") { send(TvKey.dpadRight) }
+                KeyCap(label: "◀") { send(.left) }
+                KeyCap(label: "OK", prominent: true) { send(.ok) }
+                KeyCap(label: "▶") { send(.right) }
             }
-            KeyCap(label: "▼") { send(TvKey.dpadDown) }
+            KeyCap(label: "▼") { send(.down) }
         }
         .padding(.vertical, 4)
     }
 
     private var powerRow: some View {
         HStack(spacing: 8) {
-            KeyCap(label: "LIGAR TV") { perform("TV acordada") { try await client.wake() } }
+            if client.supports(Cap.powerOn) {
+                KeyCap(label: "LIGAR") {
+                    perform("Ligando por Wake-on-LAN") { try await client.powerOn() }
+                }
+            }
             KeyCap(label: "DESLIGAR", tint: .red) {
-                perform("Enviado desligar") { try await client.key(TvKey.sleep) }
+                perform("Desligando") { try await client.sleep() }
             }
         }
     }
 
     private var textInput: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Digitar na TV")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text("Digitar na TV").font(.caption).foregroundStyle(.secondary)
             HStack {
                 TextField("texto para a TV", text: $typed)
                     .textFieldStyle(.roundedBorder)
@@ -119,7 +133,7 @@ struct RemoteView: View {
         }
     }
 
-    private func controlRow(_ items: [(String, Int)]) -> some View {
+    private func controlRow(_ items: [(String, Cmd)]) -> some View {
         HStack(spacing: 8) {
             ForEach(Array(items.enumerated()), id: \.offset) { entry in
                 KeyCap(label: entry.element.0) { send(entry.element.1) }
@@ -127,8 +141,8 @@ struct RemoteView: View {
         }
     }
 
-    private func send(_ code: Int) {
-        perform("Tecla enviada") { try await client.key(code) }
+    private func send(_ cmd: Cmd) {
+        perform("OK") { try await client.send(cmd) }
     }
 
     private func perform(_ success: String, _ operation: @escaping () async throws -> Void) {
@@ -143,16 +157,28 @@ struct RemoteView: View {
     }
 
     private func connect() async {
-        status = "Conectando em \(device.host)... se a TV mostrar um pedido, aceite na tela."
+        status = "Conectando em \(device.host)... \(device.proto.setup)"
         connected = false
         do {
             let result = try await client.connect(host: device.host, port: device.port)
             connected = true
-            info = "\(result.model.isEmpty ? "Android TV" : result.model) - Android \(result.android)"
-            status = "Conectado."
+            var label = result.model
+            if !result.android.isEmpty { label += " - Android \(result.android)" }
+            if label.isEmpty { label = device.proto.title }
+            info = label
+            status = "Conectado por \(device.proto.title)."
+
+            var updated = device
+            updated.model = result.model.isEmpty ? device.model : result.model
+            updated.android = result.android
+            let token = client.storedToken()
+            if !token.isEmpty { updated.token = token }
+            let mac = client.discoveredMac()
+            if !mac.isEmpty { updated.mac = mac }
+            store.update(updated)
         } catch {
             connected = false
-            status = "Nao conectou: \(error.localizedDescription). Confira a depuracao na TV e toque em Reconectar."
+            status = "Nao conectou: \(error.localizedDescription)"
         }
     }
 }

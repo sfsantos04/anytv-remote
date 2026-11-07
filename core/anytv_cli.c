@@ -4,6 +4,7 @@
 
 #include "anytv_adb.h"
 #include "anytv_keys.h"
+#include "anytv_facade.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,6 +32,75 @@ static int load_or_create_key(const char *path, rsa_key *key) {
     return 0;
 }
 
+/* Generic mode for the non-ADB transports (Roku ECP, webOS, Tizen). */
+static int generic_mode(int proto, const char *host, int port, const char *keypath,
+                        const char *cmd, int argc, char **argv) {
+    anytv_client *c = anytv_client_new_proto(proto);
+    if (!c) return 3;
+    const char *token = getenv("ANYTV_TOKEN");
+    if (token) anytv_client_set_token(c, token);
+    const char *mac = getenv("ANYTV_MAC");
+    if (mac) anytv_client_set_mac(c, mac);
+    if (strcmp(cmd, "selftest") == 0) {
+        printf("proto=%s caps=0x%x\n", anytv_client_proto_name(c), anytv_client_caps(c));
+        anytv_client_free(c);
+        return 0;
+    }
+    int rc = anytv_client_connect(c, host, port, 5000, 90000);
+    if (rc != 0) {
+        fprintf(stderr, "connect failed rc=%d err=%s\n", rc, anytv_client_error(c));
+        anytv_client_free(c);
+        return 4;
+    }
+    printf("connected proto=%s caps=0x%x model=%s token=%s mac=%s\n",
+           anytv_client_proto_name(c), anytv_client_caps(c),
+           anytv_client_model(c), anytv_client_token(c), anytv_client_mac(c));
+
+    char out[65536];
+    int ret = 0;
+    if (strcmp(cmd, "cmd") == 0) {
+        int code = anytv_cmd_from_name(argc > 5 ? argv[5] : "");
+        if (code < 0) { fprintf(stderr, "comando invalido\n"); ret = 5; }
+        else {
+            int r = anytv_client_cmd(c, code, argc > 6 ? atoi(argv[6]) : 1);
+            printf("cmd=%s rc=%d err=%s\n", anytv_cmd_name((anytv_cmd)code), r,
+                   anytv_client_error(c));
+            ret = r == 0 ? 0 : 6;
+        }
+    } else if (strcmp(cmd, "text") == 0) {
+        int r = anytv_client_text(c, argc > 5 ? argv[5] : "");
+        printf("text rc=%d err=%s\n", r, anytv_client_error(c));
+        ret = r == 0 ? 0 : 6;
+    } else if (strcmp(cmd, "apps") == 0) {
+        int r = anytv_client_apps(c, out, sizeof(out));
+        printf("apps rc=%d err=%s\n%s\n", r, anytv_client_error(c), out);
+        ret = r == 0 ? 0 : 6;
+    } else if (strcmp(cmd, "launch") == 0) {
+        int r = anytv_client_launch(c, argc > 5 ? argv[5] : "");
+        printf("launch rc=%d err=%s\n", r, anytv_client_error(c));
+        ret = r == 0 ? 0 : 6;
+    } else if (strcmp(cmd, "info") == 0) {
+        int r = anytv_client_info(c, out, sizeof(out));
+        printf("info rc=%d err=%s\n%s\n", r, anytv_client_error(c), out);
+        ret = r == 0 ? 0 : 6;
+    } else if (strcmp(cmd, "poweron") == 0) {
+        int r = anytv_client_power_on(c);
+        printf("poweron rc=%d err=%s\n", r, anytv_client_error(c));
+        ret = r == 0 ? 0 : 6;
+    } else if (strcmp(cmd, "sleep") == 0) {
+        int r = anytv_client_sleep(c);
+        printf("sleep rc=%d err=%s\n", r, anytv_client_error(c));
+        ret = r == 0 ? 0 : 6;
+    } else {
+        fprintf(stderr, "comando desconhecido no modo generico\n");
+        ret = 2;
+    }
+    anytv_client_disconnect(c);
+    anytv_client_free(c);
+    (void)keypath;
+    return ret;
+}
+
 int main(int argc, char **argv) {
     if (argc < 5) {
         fprintf(stderr,
@@ -43,6 +113,14 @@ int main(int argc, char **argv) {
     int port = atoi(argv[2]);
     const char *keypath = argv[3];
     const char *cmd = argv[4];
+
+    const char *proto_env = getenv("ANYTV_PROTO");
+    if (proto_env && strcmp(proto_env, "adb") != 0) {
+        int proto = strcmp(proto_env, "roku") == 0 ? ANYTV_PROTO_ROKU
+                  : strcmp(proto_env, "webos") == 0 ? ANYTV_PROTO_WEBOS
+                  : ANYTV_PROTO_TIZEN;
+        return generic_mode(proto, host, port, keypath, cmd, argc, argv);
+    }
 
     rsa_key key;
     memset(&key, 0, sizeof(key));

@@ -3,9 +3,10 @@ import SwiftUI
 struct DevicesView: View {
     @EnvironmentObject private var store: DeviceStore
     @State private var manualHost = ""
-    @State private var manualPort = "5555"
+    @State private var manualPort = ""
+    @State private var manualProto: TVProto = .adb
     @State private var scanning = false
-    @State private var scanDone = 0
+    @State private var found = 0
     @State private var message = ""
     @State private var showAdd = false
 
@@ -14,16 +15,24 @@ struct DevicesView: View {
             List {
                 Section {
                     if store.devices.isEmpty {
-                        Text("Nenhuma TV salva ainda.")
-                            .foregroundStyle(.secondary)
+                        Text("Nenhuma TV salva ainda.").foregroundStyle(.secondary)
                     }
                     ForEach(store.devices) { device in
                         NavigationLink(value: device) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(device.label).font(.headline)
-                                Text("\(device.host):\(device.port)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(device.label).font(.headline)
+                                    Text("\(device.host):\(device.port) - \(device.proto.title)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(device.proto.short)
+                                    .font(.caption2)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.accentColor.opacity(0.18),
+                                                in: Capsule())
                             }
                         }
                     }
@@ -39,24 +48,21 @@ struct DevicesView: View {
                         HStack {
                             Label(scanning ? "Procurando..." : "Procurar na rede", systemImage: "wifi")
                             Spacer()
-                            if scanning {
-                                ProgressView()
-                            } else if scanDone > 0 {
-                                Text("\(scanDone)").foregroundStyle(.secondary)
-                            }
+                            if scanning { ProgressView() }
+                            else if found > 0 { Text("\(found)").foregroundStyle(.secondary) }
                         }
                     }
                     .disabled(scanning)
                     Button {
                         showAdd = true
                     } label: {
-                        Label("Adicionar por IP", systemImage: "plus.circle")
+                        Label("Adicionar manualmente", systemImage: "plus.circle")
                     }
                 } header: {
                     Text("Descobrir")
                 } footer: {
-                    Text("A TV precisa estar com a depuracao (ADB) ligada: Ajustes > Sobre > "
-                         + "tocar 7x em Compilacao > Opcoes do desenvolvedor > Depuracao USB/rede.")
+                    Text("A varredura testa Android (5555), Roku (8060), LG webOS (3000) "
+                         + "e Samsung Tizen (8001) em cada endereco da rede.")
                 }
 
                 if !message.isEmpty {
@@ -76,12 +82,20 @@ struct DevicesView: View {
     private var addSheet: some View {
         NavigationStack {
             Form {
-                Section("Endereco da TV") {
+                Section("TV") {
+                    Picker("Protocolo", selection: $manualProto) {
+                        ForEach(TVProto.allCases) { proto in
+                            Text(proto.title).tag(proto)
+                        }
+                    }
                     TextField("192.168.0.10", text: $manualHost)
                         .keyboardType(.numbersAndPunctuation)
                         .autocorrectionDisabled()
-                    TextField("Porta", text: $manualPort)
+                    TextField("porta (vazio = \(manualProto.port))", text: $manualPort)
                         .keyboardType(.numberPad)
+                }
+                Section {
+                    Text(manualProto.setup).font(.footnote).foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("Adicionar TV")
@@ -93,9 +107,11 @@ struct DevicesView: View {
                     Button("Salvar") {
                         let host = manualHost.trimmingCharacters(in: .whitespaces)
                         guard !host.isEmpty else { return }
-                        let port = Int(manualPort) ?? 5555
-                        store.upsert(TVDevice(name: host, host: host, port: port))
+                        let port = Int(manualPort) ?? manualProto.port
+                        store.upsert(TVDevice(name: host, host: host, port: port,
+                                              proto: manualProto))
                         manualHost = ""
+                        manualPort = ""
                         showAdd = false
                     }
                 }
@@ -105,34 +121,39 @@ struct DevicesView: View {
 
     private func scan() {
         guard let base = NetworkInfo.subnetPrefix() else {
-            message = "Nao consegui ler o IP do iPhone. Adicione a TV por IP."
+            message = "Nao consegui ler o IP do iPhone. Adicione a TV pelo endereco."
             return
         }
         scanning = true
-        scanDone = 0
-        message = "Varrendo \(base).1 a \(base).254 na porta 5555..."
-        let found = NSMutableArray()
+        found = 0
+        message = "Varrendo \(base).1 a \(base).254..."
+        let protocols = TVProto.allCases
         let lock = NSLock()
+        var hits: [TVDevice] = []
         Task.detached(priority: .userInitiated) {
             DispatchQueue.concurrentPerform(iterations: 254) { index in
                 let host = "\(base).\(index + 1)"
-                let ok = host.withCString { adb_probe($0, 5555, 350) } == 1
-                if ok {
-                    lock.lock()
-                    found.add(host)
-                    lock.unlock()
+                for proto in protocols {
+                    let ok = host.withCString { cHost in
+                        anytv_probe_port(cHost, Int32(proto.port), 350) == 1
+                    }
+                    if ok {
+                        lock.lock()
+                        hits.append(TVDevice(name: host, host: host,
+                                             port: proto.port, proto: proto))
+                        lock.unlock()
+                        return
+                    }
                 }
             }
-            let hosts = (found as? [String]) ?? []
+            let devices = hits
             await MainActor.run {
                 scanning = false
-                scanDone = hosts.count
-                for host in hosts {
-                    store.upsert(TVDevice(name: host, host: host, port: 5555))
-                }
-                message = hosts.isEmpty
-                    ? "Nenhum aparelho ADB encontrado. Ligue a depuracao na TV ou adicione por IP."
-                    : "Encontrados: \(hosts.count). Toque na TV para conectar."
+                found = devices.count
+                for device in devices { store.upsert(device) }
+                message = devices.isEmpty
+                    ? "Nada encontrado. Confira se a TV esta ligada e na mesma rede."
+                    : "Encontrados: \(devices.count). Toque para conectar."
             }
         }
     }
@@ -155,9 +176,7 @@ enum NetworkInfo {
                     let result = getnameinfo(addr, socklen_t(addr.pointee.sa_len),
                                              &host, socklen_t(host.count), nil, 0,
                                              NI_NUMERICHOST)
-                    if result == 0 {
-                        address = String(cString: host)
-                    }
+                    if result == 0 { address = String(cString: host) }
                 }
             }
             pointer = interface.ifa_next

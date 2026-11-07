@@ -2,26 +2,40 @@ import Foundation
 
 enum TVClientError: LocalizedError {
     case notConnected
+    case unsupported(String)
     case failure(String)
 
     var errorDescription: String? {
         switch self {
         case .notConnected:
             return "TV desconectada"
+        case .unsupported(let what):
+            return what
         case .failure(let message):
             return message
         }
     }
 }
 
-/// Blocking C client driven from a private serial queue; the UI never blocks.
+/// Blocking C client (ADB, Roku ECP, webOS, Tizen) driven from a serial queue.
 final class TVClient: ObservableObject, @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.samflix.anytv.client")
     private var handle: OpaquePointer?
 
-    init() {
-        handle = anytv_client_new()
-        loadOrGenerateKey()
+    let proto: TVProto
+
+    init(proto: TVProto, token: String = "", mac: String = "") {
+        self.proto = proto
+        handle = anytv_client_new_proto(Int32(proto.rawValue))
+        if let handle {
+            if proto == .adb { loadOrGenerateKey(handle) }
+            if !token.isEmpty {
+                token.withCString { anytv_client_set_token(handle, $0) }
+            }
+            if !mac.isEmpty {
+                mac.withCString { anytv_client_set_mac(handle, $0) }
+            }
+        }
     }
 
     deinit {
@@ -31,8 +45,7 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func loadOrGenerateKey() {
-        guard let handle else { return }
+    private func loadOrGenerateKey(_ handle: OpaquePointer) {
         if let saved = Keychain.loadKey(), saved.count == Int(ANYTV_KEY_SIZE) {
             let loaded = saved.withUnsafeBytes { buffer -> Int32 in
                 guard let base = buffer.bindMemory(to: UInt8.self).baseAddress else { return -1 }
@@ -56,6 +69,23 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         return text.isEmpty ? "falha desconhecida" : text
     }
 
+    var caps: UInt32 {
+        guard let handle else { return 0 }
+        return anytv_client_caps(handle)
+    }
+
+    func supports(_ capability: UInt32) -> Bool { caps & capability != 0 }
+
+    func storedToken() -> String {
+        guard let handle else { return "" }
+        return String(cString: anytv_client_token(handle))
+    }
+
+    func discoveredMac() -> String {
+        guard let handle else { return "" }
+        return String(cString: anytv_client_mac(handle))
+    }
+
     private func run<T>(_ body: @escaping () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, Error>) in
             queue.async {
@@ -69,14 +99,11 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         try await run { [self] in
             guard let handle else { throw TVClientError.failure("cliente indisponivel") }
             let rc = host.withCString { cHost in
-                anytv_client_connect(handle, cHost, Int32(port), 8000, 90000)
+                anytv_client_connect(handle, cHost, Int32(port), 6000, 90000)
             }
-            if rc != 0 {
-                throw TVClientError.failure(message())
-            }
-            let model = String(cString: anytv_client_model(handle))
-            let android = String(cString: anytv_client_android(handle))
-            return (model, android)
+            if rc != 0 { throw TVClientError.failure(message()) }
+            return (String(cString: anytv_client_model(handle)),
+                    String(cString: anytv_client_android(handle)))
         }
     }
 
@@ -86,10 +113,10 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         }
     }
 
-    func key(_ code: Int, repeat count: Int = 1) async throws {
+    func send(_ cmd: Cmd, repeat count: Int = 1) async throws {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }
-            let rc = anytv_client_key(handle, Int32(code), Int32(count))
+            let rc = anytv_client_cmd(handle, Int32(cmd.rawValue), Int32(count))
             if rc != 0 { throw TVClientError.failure(message()) }
         }
     }
@@ -116,35 +143,54 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         }
     }
 
-    func apps() async throws -> [String] {
+    /// Returns (app id, display name) pairs.
+    func apps() async throws -> [(String, String)] {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }
-            var buffer = [CChar](repeating: 0, count: 64 * 1024)
+            var buffer = [CChar](repeating: 0, count: 96 * 1024)
             let rc = buffer.withUnsafeMutableBufferPointer { out in
                 anytv_client_apps(handle, out.baseAddress, out.count)
             }
             if rc != 0 { throw TVClientError.failure(message()) }
             let raw = String(cString: buffer)
             var seen = Set<String>()
-            var result: [String] = []
+            var result: [(String, String)] = []
             for line in raw.split(separator: "\n") {
                 var item = String(line).trimmingCharacters(in: .whitespaces)
                 if item.hasPrefix("package:") { item = String(item.dropFirst(8)) }
-                if let slash = item.firstIndex(of: "/") { item = String(item[..<slash]) }
+                var name = ""
+                if let tab = item.firstIndex(of: "\t") {
+                    name = String(item[item.index(after: tab)...])
+                    item = String(item[..<tab])
+                }
                 if item.isEmpty || seen.contains(item) { continue }
-                if !item.contains(".") { continue }
+                if !name.isEmpty && (name.hasPrefix("package:") || name.contains("/")) {
+                    name = ""
+                }
                 seen.insert(item)
-                result.append(item)
+                result.append((item, name))
             }
-            return result.sorted()
+            return result.sorted { $0.0 < $1.0 }
         }
     }
 
-    func launch(_ package: String) async throws {
+    func launch(_ appID: String) async throws {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }
-            let rc = package.withCString { anytv_client_launch(handle, $0) }
+            let rc = appID.withCString { anytv_client_launch(handle, $0) }
             if rc != 0 { throw TVClientError.failure(message()) }
+        }
+    }
+
+    func info() async throws -> String {
+        try await run { [self] in
+            guard let handle else { throw TVClientError.notConnected }
+            var buffer = [CChar](repeating: 0, count: 8192)
+            let rc = buffer.withUnsafeMutableBufferPointer { out in
+                anytv_client_info(handle, out.baseAddress, out.count)
+            }
+            if rc != 0 { throw TVClientError.failure(message()) }
+            return String(cString: buffer)
         }
     }
 
@@ -159,6 +205,13 @@ final class TVClient: ObservableObject, @unchecked Sendable {
             }
             if count <= 0 { throw TVClientError.failure(message()) }
             return data.prefix(Int(count))
+        }
+    }
+
+    func powerOn() async throws {
+        try await run { [self] in
+            guard let handle else { throw TVClientError.notConnected }
+            if anytv_client_power_on(handle) != 0 { throw TVClientError.failure(message()) }
         }
     }
 

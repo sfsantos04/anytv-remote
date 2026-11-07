@@ -25,7 +25,9 @@ jobs:
             -o test_core tests/test_core.c core/anytv_keys.c
           clang -std=c99 -O2 -Wall -Wextra -Werror -DANYTV_HOST_LINUX \
             -o anytv-cli core/anytv_cli.c core/anytv_adb.c core/anytv_keys.c \
-            core/anytv_bn.c core/anytv_rsa.c core/anytv_sha1.c core/anytv_facade.c
+            core/anytv_bn.c core/anytv_rsa.c core/anytv_sha1.c core/anytv_facade.c \
+            core/anytv_net.c core/anytv_ws.c core/anytv_remote.c \
+            core/anytv_roku.c core/anytv_webos.c core/anytv_tizen.c
       - name: Rodar os testes
         run: |
           set -euo pipefail
@@ -33,6 +35,8 @@ jobs:
           ./test_core
           ./anytv-cli 2>&1 | head -3 || true
           ls -l anytv-cli
+      - name: Testar os protocolos contra TVs simuladas
+        run: python3 tools/test_protocols.py ./anytv-cli
 
   ipa:
     name: IPA (iOS)
