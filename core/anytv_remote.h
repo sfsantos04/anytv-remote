@@ -77,5 +77,6 @@ int tizen_cmd(proto_ctx *c, anytv_cmd cmd);
 int tizen_text(proto_ctx *c, const char *text);
 int tizen_power_off(proto_ctx *c);
 int tizen_info(proto_ctx *c, char *out, size_t outlen);
+int tizen_apps(proto_ctx *c, char *out, size_t outlen);
 
 #endif

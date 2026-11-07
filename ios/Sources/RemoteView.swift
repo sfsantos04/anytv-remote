@@ -169,11 +169,6 @@ struct RemoteView: View {
             info = label
             status = "Conectado por \(device.proto.title)."
             appsAvailable = await client.probeApps()
-            if device.proto == .tizen {
-                status += appsAvailable
-                    ? " Apps: ok (sdb)."
-                    : " Apps: modo desenvolvedor (sdb 26101) nao respondeu."
-            }
 
             var updated = device
             updated.model = result.model.isEmpty ? device.model : result.model

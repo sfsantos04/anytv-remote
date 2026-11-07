@@ -18,10 +18,10 @@ static const char *TIZEN_KEY[ANYTV_CMD_COUNT] = {
 };
 
 uint32_t tizen_caps(void) {
-    /* no public app list and no app launch on this channel; the MAC comes from
-     * http://host:8001/api/v2/ so Wake-on-LAN is possible */
-    return ANYTV_CAP_KEY | ANYTV_CAP_TEXT | ANYTV_CAP_POWER_OFF | ANYTV_CAP_POWER_ON |
-           ANYTV_CAP_INFO;
+    /* the channel lists apps through ed.installedApp.get; launching one needs the
+     * development bridge, and the MAC comes from http://host:8001/api/v2/ */
+    return ANYTV_CAP_KEY | ANYTV_CAP_TEXT | ANYTV_CAP_APPS | ANYTV_CAP_LAUNCH |
+           ANYTV_CAP_POWER_OFF | ANYTV_CAP_POWER_ON | ANYTV_CAP_INFO;
 }
 
 static void url_encode(const char *in, char *out, size_t outlen) {
@@ -116,6 +116,46 @@ int tizen_connect(proto_ctx *c, int timeout_ms) {
     }
     if (!c->last_error[0]) snprintf(c->last_error, sizeof(c->last_error), "%s", err);
     return NET_ERR_CONNECT;
+}
+
+
+/* The remote channel can list the installed apps: emitting ed.installedApp.get
+ * makes the TV answer with appId/name for every app. This works without the
+ * development bridge (and therefore without the host-IP restriction). */
+int tizen_apps(proto_ctx *c, char *out, size_t outlen) {
+    static char reply[96 * 1024];
+    if (send_json(c, "{\"method\":\"ms.channel.emit\",\"params\":"
+                     "{\"event\":\"ed.installedApp.get\",\"to\":\"host\"}}") != NET_OK) {
+        return NET_ERR_IO;
+    }
+    int have = 0;
+    for (int i = 0; i < 6 && !have; i++) {
+        int n = ws_recv_text(&c->ws, reply, sizeof(reply), 5000);
+        if (n < 0) {
+            snprintf(c->last_error, sizeof(c->last_error), "sem resposta ao ed.installedApp.get");
+            return n == WS_ERR_TIMEOUT ? NET_ERR_TIMEOUT : NET_ERR_IO;
+        }
+        if (strstr(reply, "appId")) have = 1;
+    }
+    if (!have) return NET_ERR_PROTO;
+
+    size_t used = 0;
+    const char *p = reply;
+    int count = 0;
+    while ((p = strstr(p, "\"appId\"")) != NULL) {
+        char id[96], name[192];
+        if (anytv_json_string(p, "appId", id, sizeof(id)) != 0 || !id[0]) { p += 7; continue; }
+        name[0] = 0;
+        const char *np = strstr(p, "\"name\"");
+        if (np) anytv_json_string(np, "name", name, sizeof(name));
+        int wrote = snprintf(out + used, outlen - used, "%s\t%s\t\n", id, name);
+        if (wrote < 0 || (size_t)wrote >= outlen - used) break;
+        used += (size_t)wrote;
+        count++;
+        p += 7;
+    }
+    if (outlen) out[used < outlen ? used : outlen - 1] = 0;
+    return count > 0 ? NET_OK : NET_ERR_PROTO;
 }
 
 int tizen_cmd(proto_ctx *c, anytv_cmd cmd) {

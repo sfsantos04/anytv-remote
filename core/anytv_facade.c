@@ -471,7 +471,7 @@ static int tizen_sdb_launch(anytv_client *c, const char *app_id) {
     char sink[512];
     if (adb_service_capture(&c->sdb, svc, sink, sizeof(sink), 12000) != 0) {
         c->sdb_ready = 0;
-        snprintf(c->error, sizeof(c->error), "sdb nao abriu o app na TV");
+        snprintf(c->error, sizeof(c->error), "abrir app precisa do modo desenvolvedor com o IP deste iPhone (TV: Apps > 123 > 12345)");
         return ADB_ERR_IO;
     }
     return ADB_OK;
@@ -484,7 +484,9 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
     case ANYTV_PROTO_ROKU: rc = roku_apps(&c->ctx, out, outlen); break;
     case ANYTV_PROTO_WEBOS: rc = webos_apps(&c->ctx, out, outlen); break;
     case ANYTV_PROTO_TIZEN:
-        rc = tizen_sdb_apps(c, out, outlen);
+        /* remote channel first (no dev-mode IP restriction), sdb as fallback */
+        rc = tizen_apps(&c->ctx, out, outlen);
+        if (rc != NET_OK) rc = tizen_sdb_apps(c, out, outlen);
         break;
     default: {
         if (!c->connected) return ADB_ERR_IO;
