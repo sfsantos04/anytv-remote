@@ -48,6 +48,7 @@ typedef struct {
     char token[256];      /* webOS client-key or Tizen token */
     char mac[32];         /* for Wake-on-LAN */
     char name[64];
+    char last_error[192]; /* raw handshake answer, shown in the UI */
     int connected;
 } proto_ctx;
 

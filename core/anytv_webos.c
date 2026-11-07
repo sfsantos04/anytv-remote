@@ -72,7 +72,9 @@ static int open_pointer(proto_ctx *c, int timeout_ms) {
 }
 
 int webos_connect(proto_ctx *c, int timeout_ms) {
-    if (ws_connect(&c->ws, c->host, c->port, "/", timeout_ms, NULL, 0) != WS_OK) {
+    char err[160];
+    if (ws_connect(&c->ws, c->host, c->port, "/", timeout_ms, err, sizeof(err)) != WS_OK) {
+        snprintf(c->last_error, sizeof(c->last_error), "%s", err);
         return NET_ERR_CONNECT;
     }
     char manifest[512];

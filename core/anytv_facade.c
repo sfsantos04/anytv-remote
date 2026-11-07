@@ -96,10 +96,14 @@ int anytv_client_connect(anytv_client *c, const char *host, int port,
     case ANYTV_PROTO_WEBOS: {
         int rc = webos_connect(&c->ctx, timeout_ms);
         if (rc != NET_OK) {
-            snprintf(c->error, sizeof(c->error),
-                     rc == NET_ERR_TIMEOUT
-                     ? "TV LG nao respondeu: aceite o pedido de pareamento na tela"
-                     : "LG webOS recusou a conexao: confira 'LG Connect Apps' e a rede");
+            if (c->ctx.last_error[0]) {
+                snprintf(c->error, sizeof(c->error), "LG: %s", c->ctx.last_error);
+            } else {
+                snprintf(c->error, sizeof(c->error),
+                         rc == NET_ERR_TIMEOUT
+                         ? "TV LG nao respondeu: aceite o pedido de pareamento na tela"
+                         : "LG webOS recusou a conexao: confira 'LG Connect Apps' e a rede");
+            }
             return ADB_ERR_IO;
         }
         c->connected = 1;
@@ -109,10 +113,14 @@ int anytv_client_connect(anytv_client *c, const char *host, int port,
     case ANYTV_PROTO_TIZEN: {
         int rc = tizen_connect(&c->ctx, timeout_ms);
         if (rc != NET_OK) {
-            snprintf(c->error, sizeof(c->error),
-                     rc == NET_ERR_TIMEOUT
-                     ? "TV Samsung nao respondeu: aceite 'Permitir' na tela"
-                     : "Samsung nao aceitou: menu > Geral > Rede > Estado do dispositivo");
+            if (c->ctx.last_error[0]) {
+                snprintf(c->error, sizeof(c->error), "Samsung: %s", c->ctx.last_error);
+            } else {
+                snprintf(c->error, sizeof(c->error),
+                         rc == NET_ERR_TIMEOUT
+                         ? "TV Samsung nao respondeu: aceite 'Permitir' na tela"
+                         : "Samsung nao aceitou: menu > Geral > Rede > Estado do dispositivo");
+            }
             return ADB_ERR_IO;
         }
         c->connected = 1;

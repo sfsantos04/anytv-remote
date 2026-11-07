@@ -57,9 +57,12 @@ int tizen_connect(proto_ctx *c, int timeout_ms) {
         snprintf(path, sizeof(path), "%s?name=%s", TIZEN_CHANNEL, name_enc);
     }
 
-    char err[128];
+    char err[160];
     int rc = ws_connect(&c->ws, c->host, c->port, path, timeout_ms, err, sizeof(err));
-    if (rc != WS_OK) return rc == WS_ERR_TIMEOUT ? NET_ERR_TIMEOUT : NET_ERR_CONNECT;
+    if (rc != WS_OK) {
+        snprintf(c->last_error, sizeof(c->last_error), "%s", err);
+        return rc == WS_ERR_TIMEOUT ? NET_ERR_TIMEOUT : NET_ERR_CONNECT;
+    }
 
     char reply[2048];
     int got = ws_recv_text(&c->ws, reply, sizeof(reply), timeout_ms);
