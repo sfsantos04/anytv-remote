@@ -158,7 +158,7 @@ int main(int argc, char **argv) {
     char out[65536];
     int code = 0;
     if (strcmp(cmd, "pull") == 0) {
-        size_t cap = 24u * 1024 * 1024;
+        size_t cap = 400u * 1024 * 1024;
         uint8_t *buf = (uint8_t *)malloc(cap);
         int got = buf ? adb_pull(&c, argc > 5 ? argv[5] : "/sdcard/x", buf, cap, 30000) : -99;
         printf("pull rc=%d\n", got);

@@ -28,18 +28,25 @@ struct TVApp: Identifiable, Hashable {
     }
 }
 
-/// Loads and caches app icons: memory first, then disk, then the network.
+/// Loads and caches app icons: memory first, then disk, then the network, and as
+/// a last resort the artwork extracted from the APK by the TV itself.
 final class IconStore: ObservableObject {
     @Published private(set) var images: [String: UIImage] = [:]
     @Published private(set) var titles: [String: String] = [:]
 
     private var inFlight: Set<String> = []
     private let directory: URL
+    private let client: TVClient?
 
-    init() {
+    init(client: TVClient? = nil) {
+        self.client = client
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         directory = base.appendingPathComponent("AppIcons", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    private func fileURL(_ id: String) -> URL {
+        directory.appendingPathComponent(Self.fileKey(id) + ".png")
     }
 
     func displayName(for app: TVApp) -> String {
@@ -51,34 +58,61 @@ final class IconStore: ObservableObject {
 
     @MainActor
     func load(_ app: TVApp) async {
-        guard images[app.id] == nil, !inFlight.contains(app.id), let source = app.icon else { return }
+        guard images[app.id] == nil, !inFlight.contains(app.id) else { return }
         inFlight.insert(app.id)
         defer { inFlight.remove(app.id) }
 
-        let file = directory.appendingPathComponent(Self.fileKey(app.id) + ".png")
+        let file = fileURL(app.id)
         if let data = try? Data(contentsOf: file), let image = UIImage(data: data) {
             images[app.id] = image
             replaceTitleWithCache(app.id)
             return
         }
 
-        var target = source
-        if source.host == "play.google.com" {
-            guard let scraped = await Self.scrapePlay(source) else { return }
-            target = scraped.icon
-            if let title = scraped.title, !title.isEmpty {
-                titles[app.id] = title
-                try? title.write(to: directory.appendingPathComponent(Self.fileKey(app.id) + ".txt"),
-                                 atomically: true, encoding: .utf8)
+        if let source = app.icon, source.host == "play.google.com" {
+            if let scraped = await Self.scrapePlay(source) {
+                if let title = scraped.title, !title.isEmpty { cache(title: title, for: app.id) }
+                if let data = await Self.download(scraped.icon), let image = UIImage(data: data) {
+                    images[app.id] = image
+                    try? data.write(to: file)
+                    return
+                }
             }
+            // Not on the store (sideloaded IPTV builds): ask the TV for the icon.
+            _ = await loadFromDevice(app)
+            return
         }
-        var request = URLRequest(url: target)
+
+        if let source = app.icon, let data = await Self.download(source), let image = UIImage(data: data) {
+            images[app.id] = image
+            try? data.write(to: file)
+            return
+        }
+        _ = await loadFromDevice(app)
+    }
+
+    @MainActor
+    private func loadFromDevice(_ app: TVApp) async -> Bool {
+        guard let client,
+              let data = try? await client.appIcon(app.id),
+              let image = UIImage(data: data) else { return false }
+        images[app.id] = image
+        try? data.write(to: fileURL(app.id))
+        return true
+    }
+
+    private func cache(title: String, for id: String) {
+        titles[id] = title
+        try? title.write(to: directory.appendingPathComponent(Self.fileKey(id) + ".txt"),
+                         atomically: true, encoding: .utf8)
+    }
+
+    private static func download(_ url: URL) async -> Data? {
+        var request = URLRequest(url: url)
         request.timeoutInterval = 12
         guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode ?? 0 == 200,
-              let image = UIImage(data: data) else { return }
-        images[app.id] = image
-        try? data.write(to: file)
+              (response as? HTTPURLResponse)?.statusCode ?? 0 == 200 else { return nil }
+        return data
     }
 
     private func replaceTitleWithCache(_ id: String) {
@@ -180,10 +214,16 @@ struct AppsSheet: View {
     let canLaunch: Bool
 
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var store = IconStore()
+    @StateObject private var store: IconStore
     @State private var apps: [TVApp] = []
     @State private var loading = true
     @State private var message = ""
+
+    init(client: TVClient, canLaunch: Bool) {
+        self.client = client
+        self.canLaunch = canLaunch
+        _store = StateObject(wrappedValue: IconStore(client: client))
+    }
 
     private let columns = [GridItem(.adaptive(minimum: 108, maximum: 118), spacing: 14)]
 

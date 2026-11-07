@@ -54,6 +54,38 @@ int main(int argc, char **argv) {
             line = strtok(NULL, "\n");
         }
         printf("total=%d com_icone=%d\n", count, with_icon);
+
+        /* When asked, pull the APK icon straight from the device for every app:
+         * this is what the phone does for sideloaded packages that are not on a
+         * store. Icons land as files so the bytes can be inspected. */
+        const char *want_icons = getenv("ANYTV_ICONS");
+        if (want_icons) {
+            static uint8_t image[4 * 1024 * 1024];
+            /* rebuild the list: strtok consumed the buffer above */
+            anytv_client_apps(c, buf, sizeof(buf));
+            int ok = 0, fail = 0;
+            char *entry = strtok(buf, "\n");
+            while (entry) {
+                char *tab = strchr(entry, '\t');
+                if (tab) *tab = 0;
+                int got = anytv_client_app_icon(c, entry, image, sizeof(image));
+                if (got > 0) {
+                    ok++;
+                    printf("  icone %-40s %7d bytes %s\n", entry, got,
+                           (image[0] == 0x89 && image[1] == 'P') ? "PNG" :
+                           (image[0] == 'R' && image[1] == 'I') ? "WEBP" : "?");
+                    char path[256];
+                    snprintf(path, sizeof(path), "%s/%s.img", want_icons, entry);
+                    FILE *f = fopen(path, "wb");
+                    if (f) { fwrite(image, 1, (size_t)got, f); fclose(f); }
+                } else {
+                    fail++;
+                    printf("  icone %-40s falhou: %s\n", entry, anytv_client_error(c));
+                }
+                entry = strtok(NULL, "\n");
+            }
+            printf("icones ok=%d falhas=%d\n", ok, fail);
+        }
     }
     anytv_client_free(c);
     return rc == 0 ? 0 : 1;

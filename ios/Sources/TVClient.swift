@@ -183,6 +183,22 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Icon bytes pulled straight from the device (ADB only): the TV extracts the
+    /// PNG out of the APK with busybox, so this stays a few dozen kilobytes even
+    /// for a 200 MB app. Returns nil when the APK has no usable artwork.
+    func appIcon(_ appID: String) async throws -> Data? {
+        try await run { [self] in
+            guard let handle else { throw TVClientError.notConnected }
+            let capacity = 4 * 1024 * 1024
+            var buffer = [UInt8](repeating: 0, count: capacity)
+            let got = buffer.withUnsafeMutableBufferPointer { out in
+                appID.withCString { anytv_client_app_icon(handle, $0, out.baseAddress, out.count) }
+            }
+            guard got > 0 else { return nil }
+            return Data(buffer[0..<got])
+        }
+    }
+
     func info() async throws -> String {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }

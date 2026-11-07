@@ -47,6 +47,9 @@ int anytv_client_shell(anytv_client *c, const char *command, char *out, size_t o
                        int timeout_ms);
 /* "id\tname" lines (ADB emits the bare package id without a tab). */
 int anytv_client_apps(anytv_client *c, char *out, size_t outlen);
+/* ADB only: PNG/WebP bytes of the app icon, extracted inside the device with
+ * busybox when the app is not on a store. Returns bytes copied or < 0. */
+int anytv_client_app_icon(anytv_client *c, const char *app_id, uint8_t *out, size_t outlen);
 int anytv_client_launch(anytv_client *c, const char *app_id);
 /* ADB only: PNG bytes. */
 int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen);

@@ -418,6 +418,209 @@ int anytv_client_launch(anytv_client *c, const char *app_id) {
     return rc == NET_OK ? 0 : ADB_ERR_IO;
 }
 
+static uint32_t anytv_be32(const uint8_t *p) {
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
+/* PNG and WebP dimensions, enough to reject splash screens and banners. */
+static int anytv_image_dims(const uint8_t *d, size_t n, int *w, int *h) {
+    if (n >= 24 && d[0] == 0x89 && d[1] == 'P' && d[2] == 'N' && d[3] == 'G') {
+        uint32_t ww = anytv_be32(d + 16), hh = anytv_be32(d + 20);
+        if (!ww || !hh || ww > 4096 || hh > 4096) return 0;
+        *w = (int)ww; *h = (int)hh;
+        return 1;
+    }
+    if (n >= 30 && memcmp(d, "RIFF", 4) == 0 && memcmp(d + 8, "WEBP", 4) == 0 &&
+        memcmp(d + 12, "VP8X", 4) == 0) {
+        *w = (int)((uint32_t)d[24] | ((uint32_t)d[25] << 8) | ((uint32_t)d[26] << 16)) + 1;
+        *h = (int)((uint32_t)d[27] | ((uint32_t)d[28] << 8) | ((uint32_t)d[29] << 16)) + 1;
+        return 1;
+    }
+    return 0;
+}
+
+/* Extract a single entry inside the device with busybox and pull only that file. */
+static int anytv_pull_apk_entry(anytv_client *c, const char *apk, const char *entry,
+                                uint8_t *out, size_t outlen) {
+    char cmd[768];
+    char raw[512];
+    snprintf(cmd, sizeof(cmd),
+             "busybox unzip -p '%s' '%s' > /data/local/tmp/.anytv_icon 2>/dev/null", apk, entry);
+    if (adb_shell(&c->conn, cmd, raw, sizeof(raw), 25000) < 0) return ADB_ERR_IO;
+    int got = adb_pull(&c->conn, "/data/local/tmp/.anytv_icon", out, outlen, 20000);
+    adb_shell(&c->conn, "rm -f /data/local/tmp/.anytv_icon", raw, sizeof(raw), 8000);
+    return got;
+}
+
+/* Icons for sideloaded APKs: the TV itself extracts the PNG out of the APK with
+ * busybox, so the phone only pulls a few dozen kilobytes instead of a 200 MB
+ * file. Returns the number of image bytes copied into out, or a negative error. */
+int anytv_client_app_icon(anytv_client *c, const char *app_id, uint8_t *out, size_t outlen) {
+    if (!c || c->proto != ANYTV_PROTO_ADB || !c->connected) {
+        if (c) snprintf(c->error, sizeof(c->error), "icone do APK so existe no ADB");
+        return ADB_ERR_IO;
+    }
+    char cmd[768];
+    char raw[8192];
+
+    snprintf(cmd, sizeof(cmd), "pm path %s", app_id);
+    if (adb_shell(&c->conn, cmd, raw, sizeof(raw), 15000) < 0) {
+        snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
+        return ADB_ERR_IO;
+    }
+    char *tag = strstr(raw, "package:");
+    if (!tag) {
+        snprintf(c->error, sizeof(c->error), "app sem APK acessivel");
+        return ADB_ERR_PROTOCOL;
+    }
+    tag += 8;
+    char apk[300];
+    size_t apk_len = 0;
+    while (*tag && *tag != '\n' && *tag != '\r' && apk_len + 1 < sizeof(apk)) apk[apk_len++] = *tag++;
+    apk[apk_len] = 0;
+    if (apk_len < 4) {
+        snprintf(c->error, sizeof(c->error), "caminho do APK vazio");
+        return ADB_ERR_PROTOCOL;
+    }
+
+    snprintf(cmd, sizeof(cmd),
+             "busybox unzip -l '%s' 2>/dev/null | grep -Ei '(launcher|app_icon|ic_app|appicon)' "
+             "| grep -Ei '\\.(png|webp)$'", apk);
+    if (adb_shell(&c->conn, cmd, raw, sizeof(raw), 20000) < 0) {
+        snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
+        return ADB_ERR_IO;
+    }
+    if (!raw[0]) raw[0] = 0; /* no named launcher entry: the fallback below runs */
+
+    char best[256] = {0};
+    int best_score = -1;
+    const char *line = raw;
+    while (*line) {
+        const char *eol = strchr(line, '\n');
+        size_t len = eol ? (size_t)(eol - line) : strlen(line);
+        const char *name_end = line + len;
+        while (name_end > line && (name_end[-1] == '\r' || name_end[-1] == ' ')) name_end--;
+        const char *name_start = name_end;
+        while (name_start > line && name_start[-1] != ' ') name_start--;
+        size_t nlen = (size_t)(name_end - name_start);
+        if (nlen > 4 && nlen < sizeof(best)) {
+            char candidate[256];
+            memcpy(candidate, name_start, nlen);
+            candidate[nlen] = 0;
+            int score = 0;
+            if (strstr(candidate, "xxxhdpi")) score += 50;
+            else if (strstr(candidate, "xxhdpi")) score += 40;
+            else if (strstr(candidate, "xhdpi")) score += 30;
+            else if (strstr(candidate, "hdpi")) score += 20;
+            else if (strstr(candidate, "mdpi")) score += 10;
+            size_t cl = strlen(candidate);
+            if (cl > 4 && strcmp(candidate + cl - 4, ".png") == 0) score += 5;
+            if (strstr(candidate, "foreground") || strstr(candidate, "forground") ||
+                strstr(candidate, "background")) score -= 40;
+            if (score > best_score) {
+                best_score = score;
+                snprintf(best, sizeof(best), "%s", candidate);
+            }
+        }
+        if (!eol) break;
+        line = eol + 1;
+    }
+
+    /* First attempt: an entry whose name says it is the launcher icon. */
+    int got = 0;
+    if (best[0]) {
+        got = anytv_pull_apk_entry(c, apk, best, out, outlen);
+        int w = 0, h = 0;
+        if (got > 0 && anytv_image_dims(out, (size_t)got, &w, &h)) {
+            c->error[0] = 0;
+            return got;
+        }
+    }
+
+    /* Second attempt: obfuscated resources have random names, so take the six
+     * biggest images under res/ and keep the largest square one (>= 96px), which
+     * is the launcher icon on every APK seen so far. */
+    snprintf(cmd, sizeof(cmd),
+             "busybox unzip -l '%s' 2>/dev/null | grep -E 'res/[^/]+\\.(png|webp)$' "
+             "| sort -k1 -n -r 2>/dev/null | head -6", apk);
+    if (adb_shell(&c->conn, cmd, raw, sizeof(raw), 20000) < 0) {
+        snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
+        return ADB_ERR_IO;
+    }
+    char names[6][192];
+    long sizes[6] = {0, 0, 0, 0, 0, 0};
+    int have = 0;
+    line = raw;
+    while (*line) {
+        const char *eol = strchr(line, '\n');
+        size_t len = eol ? (size_t)(eol - line) : strlen(line);
+        const char *name_end = line + len;
+        while (name_end > line && (name_end[-1] == '\r' || name_end[-1] == ' ')) name_end--;
+        const char *name_start = name_end;
+        while (name_start > line && name_start[-1] != ' ') name_start--;
+        size_t nlen = (size_t)(name_end - name_start);
+        long size = atol(line);
+        if (nlen > 4 && nlen < sizeof(names[0]) && size > 0) {
+            int slot = -1;
+            long smallest = -1;
+            if (have < 6) {
+                slot = have++;
+            } else {
+                for (int i = 0; i < 6; i++) {
+                    if (smallest < 0 || sizes[i] < smallest) { smallest = sizes[i]; slot = i; }
+                }
+                if (sizes[slot] >= size) slot = -1;
+            }
+            if (slot >= 0) {
+                memcpy(names[slot], name_start, nlen);
+                names[slot][nlen] = 0;
+                sizes[slot] = size;
+            }
+        }
+        if (!eol) break;
+        line = eol + 1;
+    }
+    if (have == 0) {
+        if (got > 0) { c->error[0] = 0; return got; }
+        snprintf(c->error, sizeof(c->error), "APK sem icone utilizavel");
+        return ADB_ERR_PROTOCOL;
+    }
+
+    /* Real launcher icons are 48-512px; a 2048px square is usually a splash or a
+     * placeholder, so those are only used when nothing else is square. */
+    char small_name[192] = {0};
+    char big_name[192] = {0};
+    long small_area = 0, big_area = 0;
+    for (int i = 0; i < have; i++) {
+        int n = anytv_pull_apk_entry(c, apk, names[i], out, outlen);
+        int w = 0, h = 0;
+        if (n > 0 && anytv_image_dims(out, (size_t)n, &w, &h) && w == h && w >= 96) {
+            long area = (long)w * (long)h;
+            if (w <= 512) {
+                if (area > small_area) {
+                    small_area = area;
+                    size_t sl = strlen(names[i]);
+                    memcpy(small_name, names[i], sl);
+                    small_name[sl] = 0;
+                }
+            } else if (area > big_area) {
+                big_area = area;
+                size_t bl = strlen(names[i]);
+                memcpy(big_name, names[i], bl);
+                big_name[bl] = 0;
+            }
+        }
+    }
+    const char *chosen = small_name[0] ? small_name : (big_name[0] ? big_name : NULL);
+    if (chosen) {
+        int n = anytv_pull_apk_entry(c, apk, chosen, out, outlen);
+        if (n > 0) { c->error[0] = 0; return n; }
+    }
+    if (got > 0) { c->error[0] = 0; return got; }
+    snprintf(c->error, sizeof(c->error), "APK sem icone utilizavel");
+    return ADB_ERR_PROTOCOL;
+}
+
 int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen) {
     if (!c || c->proto != ANYTV_PROTO_ADB) {
         if (c) snprintf(c->error, sizeof(c->error), "captura de tela so existe no ADB");
