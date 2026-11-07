@@ -68,10 +68,9 @@ struct RemoteView: View {
                 await connect()
             }
         }
-        .onDisappear {
-            // libera a vaga única da TV; o token fica guardado para a próxima vez
-            Task { await client.disconnect() }
-        }
+        // A sessao NAO e fechada ao sair da tela: medido que cada conexao nova
+        // sem token cria um cliente novo na TV e faz ela pedir "Permitir".
+        // Um unico cliente vivo por aparelho (o pool) mantem a autorizacao.
     }
 
     private var header: some View {

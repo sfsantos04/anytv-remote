@@ -98,6 +98,9 @@ int tizen_connect(proto_ctx *c, int timeout_ms) {
         }
         char event[64] = "";
         anytv_json_string(reply, "event", event, sizeof(event));
+        if (getenv("ANYTV_DEBUG")) {
+            fprintf(stderr, "[tizen] cumprimento (%.400s)\n", reply);
+        }
         if (strcmp(event, "ms.channel.connect") != 0) {
             if (getenv("ANYTV_DEBUG")) {
                 fprintf(stderr, "[tizen] evento inesperado: %s (%.60s)\n", event, reply);
@@ -107,10 +110,27 @@ int tizen_connect(proto_ctx *c, int timeout_ms) {
             ws_close(&c->ws);
             continue;
         }
-        char tok[64];
-        if (anytv_json_string(reply, "token", tok, sizeof(tok)) == 0 && tok[0]) {
-            snprintf(c->token, sizeof(c->token), "%s", tok);
+        /* O cumprimento traz DOIS tokens: o do cliente dentro de clients[]
+         * (credencial ja conhecida, possivelmente velha) e o da sessao nova em
+         * data.token, sempre no fim do JSON. Procurar "token" pegava o primeiro e
+         * congelava um token velho, e a TV pedia "Permitir" a cada conexao
+         * (medido: token atual conecta em 91 ms, token velho em 5,9 s). */
+        char tok[64] = "";
+        {
+            const char *found = reply;
+            const char *hit;
+            while ((hit = strstr(found, "\"token\":\"")) != NULL) {
+                const char *value = hit + 9;
+                const char *end_tok = strchr(value, '"');
+                if (end_tok && (size_t)(end_tok - value) < sizeof(tok) - 1) {
+                    size_t n = (size_t)(end_tok - value);
+                    memcpy(tok, value, n);
+                    tok[n] = 0;
+                }
+                found = hit + 8;
+            }
         }
+        if (tok[0]) snprintf(c->token, sizeof(c->token), "%s", tok);
         c->connected = 1;
         return NET_OK;
     }

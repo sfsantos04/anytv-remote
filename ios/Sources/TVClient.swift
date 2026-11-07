@@ -154,8 +154,14 @@ final class TVClient: ObservableObject, @unchecked Sendable {
     }
 
     func connect(host: String, port: Int) async throws -> (model: String, android: String) {
-        Diagnostics.note("connect \(host):\(port) proto=\(proto.rawValue) tokenGuardado=\(!TokenVault.load(host: host, proto: proto).isEmpty)")
-        defer { Diagnostics.note("connect fim") }
+        let tokenBefore = TokenVault.load(host: host, proto: proto)
+        Diagnostics.note("connect \(host):\(port) proto=\(proto.rawValue) token=\(tokenBefore.isEmpty ? "nenhum" : String(tokenBefore.suffix(4)))")
+        let started = Date()
+        defer {
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            // >1,5 s = a TV nao reconheceu o token e emitiu outro (pediu Permitir)
+            Diagnostics.note("connect fim \(ms)ms \(ms > 1500 ? "LENTO: token trocado" : "rapido")")
+        }
         return try await run { [self] in
             guard let handle else { throw TVClientError.failure("cliente indisponivel") }
             let rc = host.withCString { cHost in
