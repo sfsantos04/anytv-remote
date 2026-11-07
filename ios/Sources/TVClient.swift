@@ -348,8 +348,8 @@ final class TVClient: ObservableObject, @unchecked Sendable {
                 guard let self, !Task.isCancelled else { return }
                 if !self.isConnected { return }
                 _ = try? await self.run { [self] in
-                    guard let handle else { throw TVClientError.notConnected }
-                    if anytv_client_keepalive(handle) != 0 { Diagnostics.note("keepalive falhou") }
+                    guard let h = self.handle else { throw TVClientError.notConnected }
+                    if anytv_client_keepalive(h) != 0 { Diagnostics.note("keepalive falhou") }
                 }
             }
         }
