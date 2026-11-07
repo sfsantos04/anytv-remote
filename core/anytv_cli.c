@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
     const char *so = getenv("ANYTV_SIGORDER");
     c.verbose = v ? atoi(v) : 0;
     c.sig_order = so ? atoi(so) : 0;
-    int rc = adb_connect(&c, host, port, &key, 8000);
+    int rc = adb_connect_ex(&c, host, port, &key, 8000, 90000);
     if (rc != ADB_OK) {
         fprintf(stderr, "connect failed rc=%d err=%s\n", rc, c.last_error_text);
         return 4;
