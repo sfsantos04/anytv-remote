@@ -12,7 +12,7 @@ static const char *ROKU_KEY[ANYTV_CMD_COUNT] = {
     "Play", "Rev", "Fwd", "Power", "Info", "Info", "InputHDMI1",
     "ChannelUp", "ChannelDown", "Info", "Info", "Info", "Info",
     "Info", "Info", "Info", "Info", "Info",
-    "Info", "Info", "Info", "Info", "Info"
+    "Info", "Info", "Info", "Info", "Info", "Info"
 };
 
 uint32_t roku_caps(void) {

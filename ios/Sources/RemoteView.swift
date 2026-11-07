@@ -13,6 +13,8 @@ struct RemoteView: View {
     @State private var showScreen = false
     @State private var showDiag = false
     @State private var appsAvailable = false
+    @State private var showKeyboard = false
+    @FocusState private var typing: Bool
 
     init(device: TVDevice) {
         self.device = device
@@ -28,6 +30,11 @@ struct RemoteView: View {
                     // formato do controle original da Samsung
                     RemotePad3D(client: client, title: info.isEmpty ? "Samsung" : info)
                         .padding(.top, 6)
+                } else if device.proto == .adb {
+                    // formato do controle do TCL/Android TV
+                    AndroidPad(client: client, title: info.isEmpty ? "Android" : info,
+                               wantKeyboard: $showKeyboard)
+                        .padding(.top, 6)
                 } else {
                     dpad
                     controlRow([("VOL-", .volDown), ("MUTE", .mute), ("VOL+", .volUp)])
@@ -41,6 +48,7 @@ struct RemoteView: View {
             }
             .padding()
         }
+        .onChange(of: showKeyboard) { _, _ in typing = true }
         .navigationTitle(device.label)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -159,6 +167,7 @@ struct RemoteView: View {
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
                     .autocapitalization(.none)
+                    .focused($typing)
                 Button("Enviar") {
                     let value = typed
                     typed = ""

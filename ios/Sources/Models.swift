@@ -100,7 +100,7 @@ enum Cmd: Int32 {
     case volUp, volDown, mute, playPause, next, prev
     case stop, rewind, forward, power, info, settings, input, chUp, chDown
     case red, green, yellow, blue
-    case num0, num1, num2, num3, num4, num5, num6, num7, num8, num9
+    case num0, num1, num2, num3, num4, num5, num6, num7, num8, num9, voice
 }
 
 enum Cap {
