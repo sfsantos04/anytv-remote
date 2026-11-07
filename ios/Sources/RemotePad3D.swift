@@ -327,11 +327,11 @@ struct RemotePad3D: View {
                 } else if details.isEmpty {
                     Text("A TV nao respondeu em /api/v2/ agora.")
                 }
-                ForEach(Array(details.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(details.enumerated()), id: \.offset) { item in
                     HStack {
-                        Text(row.0).foregroundStyle(.secondary)
+                        Text(item.element.0).foregroundStyle(.secondary)
                         Spacer()
-                        Text(row.1).multilineTextAlignment(.trailing)
+                        Text(item.element.1).multilineTextAlignment(.trailing)
                     }
                     .font(.subheadline)
                 }

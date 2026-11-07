@@ -48,7 +48,7 @@ struct RemoteView: View {
             }
             .padding()
         }
-        .onChange(of: showKeyboard) { _, _ in typing = true }
+        .onChange(of: showKeyboard) { _ in typing = true }
         .navigationTitle(device.label)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
