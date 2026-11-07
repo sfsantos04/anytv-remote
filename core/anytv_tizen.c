@@ -12,10 +12,12 @@
 
 static const char *TIZEN_KEY[ANYTV_CMD_COUNT] = {
     "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_ENTER", "KEY_RETURN",
-    "KEY_HOME", "KEY_MENU", "KEY_VOLUP", "KEY_VOLDOWN", "KEY_MUTE", "KEY_PLAY",
+    "KEY_HOME", "KEY_MENU", "KEY_VOLUP", "KEY_VOLDOWN", "KEY_MUTE", "KEY_PLAY_BACK",
     "KEY_FF", "KEY_REWIND", "KEY_STOP", "KEY_REWIND", "KEY_FF", "KEY_POWER",
     "KEY_INFO", "KEY_TOOLS", "KEY_SOURCE", "KEY_CHUP", "KEY_CHDOWN",
-    "KEY_RED", "KEY_GREEN", "KEY_YELLOW", "KEY_BLUE"
+    "KEY_RED", "KEY_GREEN", "KEY_YELLOW", "KEY_BLUE",
+    "KEY_0", "KEY_1", "KEY_2", "KEY_3", "KEY_4",
+    "KEY_5", "KEY_6", "KEY_7", "KEY_8", "KEY_9"
 };
 
 uint32_t tizen_caps(void) {
@@ -259,6 +261,42 @@ int tizen_power_off(proto_ctx *c) {
 }
 
 /* The TV publishes model, wifi MAC and resolution on http://host:8001/api/v2/ */
+int tizen_details(proto_ctx *c, char *out, size_t outlen) {
+    char body[8192];
+    http_response resp;
+    int rc = http_request(c->host, 8001, "GET", "/api/v2/", NULL, NULL, 5000,
+                          body, sizeof(body), &resp);
+    if (rc != NET_OK || resp.status != 200) {
+        snprintf(c->last_error, sizeof(c->last_error), "a TV nao respondeu em /api/v2/");
+        return NET_ERR_IO;
+    }
+    struct { const char *key, *label; } fields[] = {
+        {"name", "Nome"}, {"modelName", "Modelo"}, {"model", "Placa"},
+        {"resolution", "Resolucao"}, {"firmwareVersion", "Firmware"},
+        {"networkType", "Rede"}, {"ip", "IP"}, {"wifiMac", "MAC"},
+        {"countryCode", "Pais"}, {"developerMode", "Modo desenvolvedor"},
+        {"developerIP", "Host PC IP"}, {"version", "API"},
+        {NULL, NULL}
+    };
+    size_t used = 0;
+    for (int i = 0; fields[i].key; i++) {
+        char value[192] = "";
+        if (anytv_json_string(body, fields[i].key, value, sizeof(value)) != 0 || !value[0]) continue;
+        if (strcmp(fields[i].key, "networkType") == 0) {
+            if (strncmp(value, "wireless", 8) == 0) snprintf(value, sizeof(value), "Wi-Fi");
+            else if (strncmp(value, "wired", 5) == 0) snprintf(value, sizeof(value), "Cabo");
+        }
+        if (strcmp(fields[i].key, "developerMode") == 0) {
+            snprintf(value, sizeof(value), "%s", strcmp(value, "1") == 0 ? "ligado" : "desligado");
+        }
+        int wrote = snprintf(out + used, outlen - used, "%s\t%s\n", fields[i].label, value);
+        if (wrote < 0 || (size_t)wrote >= outlen - used) break;
+        used += (size_t)wrote;
+    }
+    if (outlen) out[used < outlen ? used : outlen - 1] = 0;
+    return used > 0 ? NET_OK : NET_ERR_PROTO;
+}
+
 int tizen_info(proto_ctx *c, char *out, size_t outlen) {
     char body[8192];
     http_response resp;

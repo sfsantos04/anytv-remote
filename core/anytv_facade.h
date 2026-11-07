@@ -68,6 +68,9 @@ int anytv_client_scrcpy_height(const anytv_client *c);
 /* ADB only: PNG bytes. */
 int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen);
 int anytv_client_info(anytv_client *c, char *out, size_t outlen);
+/* Detalhes da TV em linhas "rotulo\tvalor". Tizen le /api/v2/; os demais
+ * devolvem o resumo do info. */
+int anytv_client_details(anytv_client *c, char *out, size_t outlen);
 int anytv_client_wake(anytv_client *c);
 int anytv_client_power_on(anytv_client *c);   /* Wake-on-LAN */
 int anytv_client_sleep(anytv_client *c);      /* power off / sleep */

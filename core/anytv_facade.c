@@ -271,7 +271,8 @@ static int adb_cmd(anytv_client *c, anytv_cmd cmd) {
         19, 20, 21, 22, 23, 4, 3, 82,
         24, 25, 91, 85, 87, 88,
         86, 89, 90, 26, 165, 176, 178, 166, 167,
-        186, 184, 185, 183
+        186, 184, 185, 183,
+        7, 8, 9, 10, 11, 12, 13, 14, 15, 16
     };
     if ((int)cmd < 0 || cmd >= ANYTV_CMD_COUNT) return ADB_ERR_PROTOCOL;
     char line[128];
@@ -929,6 +930,20 @@ int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen) {
     adb_rm(&c->conn, "/data/local/tmp/anytv_shot.png", 8000);
     if (got < 0) snprintf(c->error, sizeof(c->error), "falha ao ler a captura");
     return got;
+}
+
+int anytv_client_details(anytv_client *c, char *out, size_t outlen) {
+    if (!c) return ADB_ERR_PROTOCOL;
+    if (c->proto == ANYTV_PROTO_TIZEN) {
+        int rc = tizen_details(&c->ctx, out, outlen);
+        if (rc == NET_OK) return 0;
+        snprintf(c->error, sizeof(c->error), "%s",
+                 c->ctx.last_error[0] ? c->ctx.last_error : "sem detalhes da TV");
+        return ADB_ERR_IO;
+    }
+    /* outros protocolos: o resumo do info ja e o que existe */
+    int rc = anytv_client_info(c, out, outlen);
+    return rc;
 }
 
 int anytv_client_info(anytv_client *c, char *out, size_t outlen) {

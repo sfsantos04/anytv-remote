@@ -334,6 +334,24 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Detalhes da TV em linhas "rotulo\tvalor" (Tizen le /api/v2/).
+    func details() async throws -> [(String, String)] {
+        try await run { [self] in
+            guard let handle else { throw TVClientError.notConnected }
+            var buffer = [CChar](repeating: 0, count: 4096)
+            let rc = buffer.withUnsafeMutableBufferPointer { out in
+                anytv_client_details(handle, out.baseAddress, out.count)
+            }
+            if rc != 0 { throw TVClientError.failure(message()) }
+            let text = String(cString: buffer)
+            return text.split(separator: "\n").compactMap { line in
+                let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+                guard parts.count == 2 else { return nil }
+                return (String(parts[0]), String(parts[1]))
+            }
+        }
+    }
+
     func info() async throws -> String {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }

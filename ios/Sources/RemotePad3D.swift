@@ -57,6 +57,10 @@ struct RemotePad3D: View {
     var title: String
 
     @State private var lastSent: String = ""
+    @State private var showNumbers = false
+    @State private var showInfo = false
+    @State private var details: [(String, String)] = []
+    @State private var loadingDetails = false
 
     private func tap(_ cmd: Cmd, _ label: String) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -70,7 +74,12 @@ struct RemotePad3D: View {
             wheel
             rockers
             bottomRow
-            colorRow
+            if showNumbers {
+                numberPad
+            } else {
+                colorRow
+            }
+            numberToggle
             Text(lastSent.isEmpty ? " " : lastSent)
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.35))
@@ -81,6 +90,7 @@ struct RemotePad3D: View {
         .padding(.bottom, 26)
         .frame(maxWidth: 330)
         .background(body3D)
+        .sheet(isPresented: $showInfo) { infoSheet }
     }
 
     // MARK: - Corpo
@@ -279,8 +289,121 @@ struct RemotePad3D: View {
             smallKey("house", .home, "Home")
             smallKey("playpause", .playPause, "Play/Pause")
             smallKey("speaker.slash", .mute, "Mudo")
-            smallKey("info.circle", .info, "Info")
+            infoKey
         }
+    }
+
+    /// O painel mostra o que a TV informa de verdade (modelo, resolucao, rede,
+    /// modo desenvolvedor). Tocar e segurar ainda manda KEY_INFO para a TV.
+    private var infoKey: some View {
+        Button {
+            details = []
+            loadingDetails = true
+            showInfo = true
+            Task {
+                details = (try? await client.details()) ?? []
+                loadingDetails = false
+            }
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white.opacity(0.82))
+                .frame(width: 46, height: 46)
+        }
+        .buttonStyle(BevelButtonStyle())
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.7).onEnded { _ in
+                tap(.info, "Info na TV")
+            }
+        )
+        .accessibilityLabel("Informacoes da TV")
+    }
+
+    private var infoSheet: some View {
+        NavigationStack {
+            List {
+                if loadingDetails {
+                    HStack { ProgressView(); Text("Lendo da TV...") }
+                } else if details.isEmpty {
+                    Text("A TV nao respondeu em /api/v2/ agora.")
+                }
+                ForEach(Array(details.enumerated()), id: \.offset) { _, row in
+                    HStack {
+                        Text(row.0).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(row.1).multilineTextAlignment(.trailing)
+                    }
+                    .font(.subheadline)
+                }
+            }
+            .navigationTitle("A TV")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fechar") { showInfo = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    // MARK: - Teclado numerico (botao 123 do controle)
+
+    private var numberPad: some View {
+        VStack(spacing: 12) {
+            ForEach([[1, 2, 3], [4, 5, 6], [7, 8, 9]], id: \.self) { line in
+                HStack(spacing: 22) {
+                    ForEach(line, id: \.self) { digit in
+                        numberKey(digit)
+                    }
+                }
+            }
+            HStack(spacing: 22) {
+                numKey("CH-", .chDown)
+                numberKey(0)
+                numKey("CH+", .chUp)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func numberKey(_ digit: Int) -> some View {
+        let cmd = Cmd(rawValue: Cmd.num0.rawValue + Int32(digit)) ?? .num0
+        return Button {
+            tap(cmd, "\(digit)")
+        } label: {
+            Text("\(digit)")
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.92))
+                .frame(width: 54, height: 42)
+        }
+        .buttonStyle(BevelButtonStyle(shape: AnyShape(RoundedRectangle(cornerRadius: 12, style: .continuous))))
+    }
+
+    private func numKey(_ label: String, _ cmd: Cmd) -> some View {
+        Button {
+            tap(cmd, label)
+        } label: {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.75))
+                .frame(width: 54, height: 42)
+        }
+        .buttonStyle(BevelButtonStyle(shape: AnyShape(RoundedRectangle(cornerRadius: 12, style: .continuous))))
+    }
+
+    private var numberToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { showNumbers.toggle() }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            Text(showNumbers ? "ABC" : "123")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 58, height: 30)
+        }
+        .buttonStyle(BevelButtonStyle(shape: AnyShape(Capsule()), glow: Color.white.opacity(0.20)))
+        .padding(.top, 2)
     }
 
     private func smallKey(_ symbol: String, _ cmd: Cmd, _ label: String) -> some View {

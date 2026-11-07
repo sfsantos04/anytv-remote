@@ -31,6 +31,9 @@ typedef enum {
     ANYTV_CMD_STOP, ANYTV_CMD_REWIND, ANYTV_CMD_FORWARD, ANYTV_CMD_POWER,
     ANYTV_CMD_INFO, ANYTV_CMD_SETTINGS, ANYTV_CMD_INPUT, ANYTV_CMD_CH_UP, ANYTV_CMD_CH_DOWN,
     ANYTV_CMD_RED, ANYTV_CMD_GREEN, ANYTV_CMD_YELLOW, ANYTV_CMD_BLUE,
+    ANYTV_CMD_NUM_0, ANYTV_CMD_NUM_1, ANYTV_CMD_NUM_2, ANYTV_CMD_NUM_3,
+    ANYTV_CMD_NUM_4, ANYTV_CMD_NUM_5, ANYTV_CMD_NUM_6, ANYTV_CMD_NUM_7,
+    ANYTV_CMD_NUM_8, ANYTV_CMD_NUM_9,
     ANYTV_CMD_COUNT
 } anytv_cmd;
 
@@ -79,6 +82,7 @@ int tizen_cmd(proto_ctx *c, anytv_cmd cmd);
 int tizen_text(proto_ctx *c, const char *text);
 int tizen_power_off(proto_ctx *c);
 int tizen_info(proto_ctx *c, char *out, size_t outlen);
+int tizen_details(proto_ctx *c, char *out, size_t outlen);
 int tizen_apps(proto_ctx *c, char *out, size_t outlen);
 
 #endif
