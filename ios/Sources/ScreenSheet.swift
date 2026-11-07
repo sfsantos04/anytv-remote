@@ -26,51 +26,11 @@ struct ScreenSheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 12) {
-                if live {
-                    LiveVideoView(player: player)
-                        .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .overlay(alignment: .topLeading) {
-                            Text("\(player.frames) quadros · \(Int(player.kilobytesPerSecond)) KB/s")
-                                .font(.caption2.monospaced())
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(.ultraThinMaterial, in: Capsule())
-                                .padding(8)
-                        }
-                } else {
-                    Group {
-                        if let image {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFit()
-                                .clipShape(RoundedRectangle(cornerRadius: 10))
-                        } else {
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.secondary.opacity(0.15))
-                                .frame(height: 220)
-                                .overlay {
-                                    if loading { ProgressView() } else {
-                                        Text("Sem imagem").foregroundStyle(.secondary)
-                                    }
-                                }
-                        }
-                    }
-                }
-
+                if live { liveArea } else { snapshotArea }
                 if !message.isEmpty {
                     Text(message).font(.footnote).foregroundStyle(.secondary)
                 }
-
-                if client.supports(Cap.screen) {
-                    Toggle("Tela ao vivo (H.264)", isOn: $live)
-                        .padding(.horizontal)
-                }
-                if !live {
-                    Toggle("Atualizar a cada 2 s", isOn: $auto)
-                        .padding(.horizontal)
-                }
-
+                controls
                 Text("O áudio não vem junto: o encoder do sistema só entrega vídeo. Em Android 11+ o caminho é o servidor do scrcpy; neste Android 7 seria preciso root com captura ALSA.")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
@@ -103,6 +63,56 @@ struct ScreenSheet: View {
                 Task { await refresh() }
             }
         }
+    }
+
+    private var liveArea: some View {
+        LiveVideoView(player: player)
+            .aspectRatio(16.0 / 9.0, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(alignment: .topLeading) { statsBadge }
+    }
+
+    private var statsBadge: some View {
+        let frames = player.frames
+        let rate = Int(player.kilobytesPerSecond)
+        return Text("\(frames) quadros · \(rate) KB/s")
+            .font(.caption2.monospaced())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(8)
+    }
+
+    private var snapshotArea: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            } else {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.secondary.opacity(0.15))
+                    .frame(height: 220)
+                    .overlay {
+                        if loading { ProgressView() } else {
+                            Text("Sem imagem").foregroundStyle(.secondary)
+                        }
+                    }
+            }
+        }
+    }
+
+    private var controls: some View {
+        VStack(spacing: 8) {
+            if client.supports(Cap.screen) {
+                Toggle("Tela ao vivo (H.264)", isOn: $live)
+            }
+            if !live {
+                Toggle("Atualizar a cada 2 s", isOn: $auto)
+            }
+        }
+        .padding(.horizontal)
     }
 
     private func restartLive() {
