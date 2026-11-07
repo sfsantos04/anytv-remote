@@ -270,7 +270,8 @@ static int adb_cmd(anytv_client *c, anytv_cmd cmd) {
     static const int ADB_CODES[ANYTV_CMD_COUNT] = {
         19, 20, 21, 22, 23, 4, 3, 82,
         24, 25, 91, 85, 87, 88,
-        86, 89, 90, 26, 165, 176, 178, 166, 167
+        86, 89, 90, 26, 165, 176, 178, 166, 167,
+        186, 184, 185, 183
     };
     if ((int)cmd < 0 || cmd >= ANYTV_CMD_COUNT) return ADB_ERR_PROTOCOL;
     char line[128];

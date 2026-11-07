@@ -26,6 +26,8 @@ targets:
         buildPhase: resources
       - path: Resources/scrcpy-server.jar
         buildPhase: resources
+      - path: Resources/icons
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist

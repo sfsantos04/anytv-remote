@@ -14,14 +14,15 @@ static const char *TIZEN_KEY[ANYTV_CMD_COUNT] = {
     "KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_ENTER", "KEY_RETURN",
     "KEY_HOME", "KEY_MENU", "KEY_VOLUP", "KEY_VOLDOWN", "KEY_MUTE", "KEY_PLAY",
     "KEY_FF", "KEY_REWIND", "KEY_STOP", "KEY_REWIND", "KEY_FF", "KEY_POWER",
-    "KEY_INFO", "KEY_TOOLS", "KEY_SOURCE", "KEY_CHUP", "KEY_CHDOWN"
+    "KEY_INFO", "KEY_TOOLS", "KEY_SOURCE", "KEY_CHUP", "KEY_CHDOWN",
+    "KEY_RED", "KEY_GREEN", "KEY_YELLOW", "KEY_BLUE"
 };
 
 uint32_t tizen_caps(void) {
     /* the channel lists apps through ed.installedApp.get; launching one needs the
      * development bridge, and the MAC comes from http://host:8001/api/v2/ */
     return ANYTV_CAP_KEY | ANYTV_CAP_TEXT | ANYTV_CAP_APPS | ANYTV_CAP_LAUNCH |
-           ANYTV_CAP_POWER_OFF | ANYTV_CAP_POWER_ON | ANYTV_CAP_INFO;
+           ANYTV_CAP_POWER_OFF | ANYTV_CAP_POWER_ON | ANYTV_CAP_INFO | ANYTV_CAP_COLORS;
 }
 
 static void url_encode(const char *in, char *out, size_t outlen) {
@@ -212,11 +213,15 @@ int tizen_apps(proto_ctx *c, char *out, size_t outlen) {
         name[0] = 0;
         const char *np = strstr(p, "\"name\"");
         if (np) anytv_json_string(np, "name", name, sizeof(name));
-        char icon[160] = "";
-        const char *pkg = tizen_store_package(id);
-        if (pkg) {
-            snprintf(icon, sizeof(icon),
-                     "https://play.google.com/store/apps/details?id=%s", pkg);
+        char icon[224] = "";
+        const char *ip = strstr(p, "\"icon\"");
+        if (ip && anytv_json_string(ip, "icon", icon, sizeof(icon)) != 0) icon[0] = 0;
+        if (!icon[0]) {
+            const char *pkg = tizen_store_package(id);
+            if (pkg) {
+                snprintf(icon, sizeof(icon),
+                         "https://play.google.com/store/apps/details?id=%s", pkg);
+            }
         }
         int wrote = snprintf(out + used, outlen - used, "%s\t%s\t%s\n", id, name, icon);
         if (wrote < 0 || (size_t)wrote >= outlen - used) break;

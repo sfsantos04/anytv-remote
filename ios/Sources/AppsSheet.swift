@@ -62,6 +62,12 @@ final class IconStore: ObservableObject {
         inFlight.insert(app.id)
         defer { inFlight.remove(app.id) }
 
+        // icone embutido no app (marcas conhecidas): instantaneo e sem rede
+        if let bundled = UIImage(named: app.id) {
+            images[app.id] = bundled
+            return
+        }
+
         let file = fileURL(app.id)
         if let data = try? Data(contentsOf: file), let image = UIImage(data: data) {
             images[app.id] = image

@@ -10,14 +10,14 @@ static const char *WEBOS_BUTTON[ANYTV_CMD_COUNT] = {
     "UP", "DOWN", "LEFT", "RIGHT", "ENTER", "BACK", "HOME", "MENU",
     "VOLUMEUP", "VOLUMEDOWN", "MUTE", "PLAY", "FF", "REW",
     "STOP", "REW", "FF", "POWER", "INFO", "MENU", "INPUT_HUB",
-    "CHANNELUP", "CHANNELDOWN"
+    "CHANNELUP", "CHANNELDOWN", "RED", "GREEN", "YELLOW", "BLUE"
 };
 
 static int request_id = 0;
 
 uint32_t webos_caps(void) {
     return ANYTV_CAP_KEY | ANYTV_CAP_TEXT | ANYTV_CAP_APPS | ANYTV_CAP_LAUNCH |
-           ANYTV_CAP_POWER_OFF | ANYTV_CAP_POWER_ON | ANYTV_CAP_INFO;
+           ANYTV_CAP_POWER_OFF | ANYTV_CAP_POWER_ON | ANYTV_CAP_INFO | ANYTV_CAP_COLORS;
 }
 
 static int json_string(const char *json, const char *key, char *out, size_t outlen) {

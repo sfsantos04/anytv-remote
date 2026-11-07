@@ -99,6 +99,7 @@ enum Cmd: Int32 {
     case up = 0, down, left, right, ok, back, home, menu
     case volUp, volDown, mute, playPause, next, prev
     case stop, rewind, forward, power, info, settings, input, chUp, chDown
+    case red, green, yellow, blue
 }
 
 enum Cap {
@@ -110,6 +111,7 @@ enum Cap {
     static let powerOff: UInt32 = 1 << 5
     static let powerOn: UInt32 = 1 << 6
     static let info: UInt32 = 1 << 7
+    static let colors: UInt32 = 1 << 8
 }
 
 @MainActor

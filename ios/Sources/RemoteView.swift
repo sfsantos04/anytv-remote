@@ -24,12 +24,18 @@ struct RemoteView: View {
             VStack(spacing: 14) {
                 header
                 statusBar
-                dpad
-                controlRow([("VOL-", .volDown), ("MUTE", .mute), ("VOL+", .volUp)])
-                controlRow([("MENU", .menu), ("HOME", .home), ("BACK", .back)])
-                controlRow([("|<", .prev), ("PLAY", .playPause), (">|", .next)])
-                controlRow([("ENTRADA", .input), ("INFO", .info), ("AJUSTES", .settings)])
-                powerRow
+                if device.proto == .tizen {
+                    // formato do controle original da Samsung
+                    RemotePad3D(client: client, title: info.isEmpty ? "Samsung" : info)
+                        .padding(.top, 6)
+                } else {
+                    dpad
+                    controlRow([("VOL-", .volDown), ("MUTE", .mute), ("VOL+", .volUp)])
+                    controlRow([("MENU", .menu), ("HOME", .home), ("BACK", .back)])
+                    controlRow([("|<", .prev), ("PLAY", .playPause), (">|", .next)])
+                    controlRow([("ENTRADA", .input), ("INFO", .info), ("AJUSTES", .settings)])
+                    powerRow
+                }
                 if client.supports(Cap.text) { textInput }
                 Spacer(minLength: 8)
             }
