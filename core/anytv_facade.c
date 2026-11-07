@@ -100,6 +100,9 @@ int anytv_client_key_export(const anytv_client *c, uint8_t *out, size_t len) {
 
 int anytv_client_connect(anytv_client *c, const char *host, int port,
                          int timeout_ms, int auth_wait_ms) {
+    /* A TV aceita uma sessao por cliente: reconectar com a sessao viva faz ela
+     * pedir "Permitir" de novo. Ja conectado, nao ha o que fazer. */
+    if (c && c->connected) return 0;
     if (!c || !host) return ADB_ERR_PROTOCOL;
     anytv_client_disconnect(c);
     snprintf(c->ctx.host, sizeof(c->ctx.host), "%s", host);
@@ -134,6 +137,10 @@ int anytv_client_connect(anytv_client *c, const char *host, int port,
         return 0;
     }
     case ANYTV_PROTO_TIZEN: {
+        if (c->ctx.ws.fd >= 0) {
+            ws_close(&c->ctx.ws);
+            c->ctx.ws.fd = -1;
+        }
         int rc = tizen_connect(&c->ctx, timeout_ms);
         if (rc != NET_OK && c->ctx.mac[0]) {
             /* A sleeping Samsung closes the remote channel; wake it and retry once

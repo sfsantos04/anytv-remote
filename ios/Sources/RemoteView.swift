@@ -97,7 +97,20 @@ struct RemoteView: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
             Button(connected ? "Testar" : "Reconectar") {
-                Task { await connect() }
+                Task {
+                    if connected {
+                        // teste leve: consulta o painel HTTP, sem abrir sessão nova
+                        // na TV (sessão extra = "Permitir" de novo)
+                        if let details = try? await client.info(), !details.isEmpty {
+                            status = "OK: \(details)"
+                        } else {
+                            status = "A TV não respondeu ao teste."
+                            connected = false
+                        }
+                    } else {
+                        await connect()
+                    }
+                }
             }
             .font(.footnote)
             .buttonStyle(.bordered)
