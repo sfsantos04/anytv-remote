@@ -31,9 +31,18 @@ struct anytv_client {
     uint8_t sc_raw[64 * 1024];
     size_t sc_raw_len;
     size_t sc_raw_off;
+    /* Tizen dev bridge (sdb) on port 26101: it is what exposes the app list,
+     * because the remote-control channel does not */
+    adb_conn sdb;
+    int sdb_open;
+    int sdb_ready;
 };
 
 static const char *PROTO_NAMES[] = { "adb", "roku", "webos", "tizen" };
+
+static int tizen_sdb_ready(anytv_client *c);
+static int tizen_sdb_apps(anytv_client *c, char *out, size_t outlen);
+static int tizen_sdb_launch(anytv_client *c, const char *app_id);
 
 static uint32_t caps_for(int proto) {
     switch (proto) {
@@ -128,6 +137,15 @@ int anytv_client_connect(anytv_client *c, const char *host, int port,
     case ANYTV_PROTO_TIZEN: {
         int rc = tizen_connect(&c->ctx, timeout_ms);
         if (rc != NET_OK) {
+            /* The remote channel dies when the TV sleeps; the development bridge
+             * keeps answering, so apps and launching still work. */
+            if (tizen_sdb_ready(c) == ADB_OK) {
+                c->connected = 1;
+                c->caps = ANYTV_CAP_APPS | ANYTV_CAP_LAUNCH | ANYTV_CAP_INFO;
+                snprintf(c->error, sizeof(c->error),
+                         "canal remoto fora; usando o sdb (apps e abrir app)");
+                return 0;
+            }
             if (c->ctx.last_error[0]) {
                 snprintf(c->error, sizeof(c->error), "Samsung: %s", c->ctx.last_error);
             } else {
@@ -139,6 +157,10 @@ int anytv_client_connect(anytv_client *c, const char *host, int port,
             return ADB_ERR_IO;
         }
         c->connected = 1;
+        /* the app list lives on the development bridge, not on the remote channel */
+        if (tizen_sdb_ready(c) == ADB_OK) {
+            c->caps |= ANYTV_CAP_APPS | ANYTV_CAP_LAUNCH;
+        }
         c->error[0] = 0;
         return 0;
     }
@@ -164,6 +186,11 @@ void anytv_client_disconnect(anytv_client *c) {
     if (c->conn.fd >= 0) adb_close(&c->conn);
     if (c->ctx.ws.fd >= 0) ws_close(&c->ctx.ws);
     if (c->ctx.pointer.fd >= 0) ws_close(&c->ctx.pointer);
+    if (c->sdb_open) {
+        adb_close(&c->sdb);
+        c->sdb_open = 0;
+    }
+    c->sdb_ready = 0;
     c->ctx.ws.fd = -1;
     c->ctx.pointer.fd = -1;
     c->connected = 0;
@@ -349,6 +376,99 @@ static void anytv_pretty_label(const char *pkg, char *out, size_t outlen) {
     out[i] = 0;
 }
 
+/* ---- Tizen dev bridge (sdb, port 26101) ----------------------------------
+ * The remote channel has no app list, but the development bridge does. It only
+ * accepts a whitelist of shell verbs: "0 vd_applist" dumps key=value pairs per
+ * app and "0 execute <appid>" launches one. */
+static int tizen_sdb_ready(anytv_client *c) {
+    if (c->sdb_ready) return ADB_OK;
+    if (c->sdb_open) {
+        adb_close(&c->sdb);
+        c->sdb_open = 0;
+    }
+    memset(&c->sdb, 0, sizeof(c->sdb));
+    c->sdb.fd = -1;
+    int rc = adb_connect(&c->sdb, c->ctx.host, 26101, NULL, 6000);
+    if (rc != ADB_OK) {
+        snprintf(c->error, sizeof(c->error), "sdb: %.160s", c->sdb.last_error_text);
+        return rc;
+    }
+    c->sdb_open = 1;
+    c->sdb_ready = 1;
+    return ADB_OK;
+}
+
+static void sdb_value(const char *line, const char *key, char *out, size_t outlen) {
+    out[0] = 0;
+    const char *k = strstr(line, key);
+    if (!k) return;
+    const char *eq = strchr(k, '=');
+    if (!eq) return;
+    eq++;
+    const char *end = strstr(eq, "-------------");
+    size_t n = end ? (size_t)(end - eq) : strlen(eq);
+    while (n > 0 && (eq[n - 1] == ' ' || eq[n - 1] == '\r' || eq[n - 1] == '-')) n--;
+    if (n >= outlen) n = outlen - 1;
+    memcpy(out, eq, n);
+    out[n] = 0;
+}
+
+static int tizen_sdb_apps(anytv_client *c, char *out, size_t outlen) {
+    if (tizen_sdb_ready(c) != ADB_OK) return ADB_ERR_IO;
+    static char dump[192 * 1024];
+    if (adb_service_capture(&c->sdb, "shell:0 vd_applist", dump, sizeof(dump), 25000) != 0) {
+        c->sdb_ready = 0;
+        snprintf(c->error, sizeof(c->error), "sdb nao respondeu ao vd_applist");
+        return ADB_ERR_IO;
+    }
+    size_t used = 0;
+    char id[64] = {0}, title[160] = {0};
+    const char *line = dump;
+    int count = 0;
+    while (*line) {
+        const char *eol = strchr(line, '\n');
+        size_t len = eol ? (size_t)(eol - line) : strlen(line);
+        char buf[512];
+        size_t n = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
+        memcpy(buf, line, n);
+        buf[n] = 0;
+        if (strstr(buf, "app_id")) {
+            sdb_value(buf, "app_id", id, sizeof(id));
+        } else if (strstr(buf, "app_title")) {
+            sdb_value(buf, "app_title", title, sizeof(title));
+            if (id[0]) {
+                int wrote = snprintf(out + used, outlen - used, "%s\t%s\t\n", id, title);
+                if (wrote < 0 || (size_t)wrote >= outlen - used) break;
+                used += (size_t)wrote;
+                count++;
+                id[0] = 0;
+                title[0] = 0;
+            }
+        }
+        if (!eol) break;
+        line = eol + 1;
+    }
+    if (outlen) out[used < outlen ? used : outlen - 1] = 0;
+    if (!count) {
+        snprintf(c->error, sizeof(c->error), "vd_applist veio vazio");
+        return ADB_ERR_PROTOCOL;
+    }
+    return ADB_OK;
+}
+
+static int tizen_sdb_launch(anytv_client *c, const char *app_id) {
+    if (tizen_sdb_ready(c) != ADB_OK) return ADB_ERR_IO;
+    char svc[256];
+    snprintf(svc, sizeof(svc), "shell:0 execute %s 0", app_id);
+    char sink[512];
+    if (adb_service_capture(&c->sdb, svc, sink, sizeof(sink), 12000) != 0) {
+        c->sdb_ready = 0;
+        snprintf(c->error, sizeof(c->error), "sdb nao abriu o app na TV");
+        return ADB_ERR_IO;
+    }
+    return ADB_OK;
+}
+
 int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
     if (!c) return ADB_ERR_IO;
     int rc;
@@ -356,8 +476,8 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
     case ANYTV_PROTO_ROKU: rc = roku_apps(&c->ctx, out, outlen); break;
     case ANYTV_PROTO_WEBOS: rc = webos_apps(&c->ctx, out, outlen); break;
     case ANYTV_PROTO_TIZEN:
-        snprintf(c->error, sizeof(c->error), "Samsung nao expoe lista de apps no controle remoto");
-        return ADB_ERR_PROTOCOL;
+        rc = tizen_sdb_apps(c, out, outlen);
+        break;
     default: {
         if (!c->connected) return ADB_ERR_IO;
         /* `cmd package query-activities --brief` only exists on newer Android and
@@ -421,8 +541,8 @@ int anytv_client_launch(anytv_client *c, const char *app_id) {
     case ANYTV_PROTO_ROKU: rc = roku_launch(&c->ctx, app_id); break;
     case ANYTV_PROTO_WEBOS: rc = webos_launch(&c->ctx, app_id); break;
     case ANYTV_PROTO_TIZEN:
-        snprintf(c->error, sizeof(c->error), "Samsung nao permite abrir app por controle remoto");
-        return ADB_ERR_PROTOCOL;
+        rc = tizen_sdb_launch(c, app_id) == ADB_OK ? NET_OK : NET_ERR_PROTO;
+        break;
     default: {
         char cmd[512];
         anytv_launch_command(app_id, cmd, sizeof(cmd));

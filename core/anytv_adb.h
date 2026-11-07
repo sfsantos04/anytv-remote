@@ -56,6 +56,11 @@ void adb_close(adb_conn *c);
  * Returns the exit code, or a negative ADB_ERR_*. */
 int adb_shell(adb_conn *c, const char *command, char *out, size_t outlen, int timeout_ms);
 
+/* Opens any service and captures everything it writes as text (sdb, for one,
+ * answers on "shell:0 <command>"). Returns 0 or a negative ADB_ERR_*. */
+int adb_service_capture(adb_conn *c, const char *service, char *out, size_t outlen,
+                        int timeout_ms);
+
 /* Read a whole remote file over the sync service (binary safe). Returns bytes read or <0. */
 int adb_pull(adb_conn *c, const char *remote_path, uint8_t *out, size_t outlen, int timeout_ms);
 

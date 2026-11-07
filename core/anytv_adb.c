@@ -640,6 +640,19 @@ static int sync_send(adb_conn *c, uint32_t lid, uint32_t rid, const void *data, 
     return send_msg(c, A_WRTE, lid, rid, data, len);
 }
 
+int adb_service_capture(adb_conn *c, const char *service, char *out, size_t outlen,
+                        int timeout_ms) {
+    uint32_t lid = 0, rid = 0;
+    size_t written = 0;
+    int exit_code = 0;
+    if (out && outlen) out[0] = 0;
+    int rc = open_service(c, service, &lid, &rid, timeout_ms);
+    if (rc != ADB_OK) return rc;
+    rc = drain_stream(c, lid, rid, out, outlen, &written, &exit_code, timeout_ms, 0);
+    if (out && outlen) out[written < outlen ? written : outlen - 1] = 0;
+    return rc == ADB_OK ? 0 : rc;
+}
+
 /* Reads one sync response record and returns its tag as an ADB_* code. */
 static int sync_read_record(adb_conn *c, uint32_t lid, uint32_t rid,
                             char *msg, size_t msglen, int timeout_ms) {

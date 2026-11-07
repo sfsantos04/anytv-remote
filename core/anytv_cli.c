@@ -167,6 +167,24 @@ int main(int argc, char **argv) {
             if (f) { fwrite(buf, 1, (size_t)got, f); fclose(f); printf("wrote %s\n", argv[6]); }
         }
         free(buf);
+    } else if (strcmp(cmd, "svc") == 0) {
+        size_t cap = 512 * 1024;
+        char *sbuf = (char *)malloc(cap);
+        int rc = sbuf ? adb_service_capture(&c, argc > 5 ? argv[5] : "capability:", sbuf, cap, 25000) : -99;
+        if (rc == 0 && argc > 6) {
+            FILE *f = fopen(argv[6], "wb");
+            if (f) {
+                size_t n = strlen(sbuf);
+                fwrite(sbuf, 1, n, f);
+                fclose(f);
+                printf("wrote %s (%zu bytes)\n", argv[6], n);
+            }
+        } else if (rc == 0) {
+            printf("%s\n", sbuf);
+        } else {
+            printf("svc rc=%d\n", rc);
+        }
+        free(sbuf);
     } else if (strcmp(cmd, "raw") == 0) {
         /* debug: open a raw service and dump the frames the device sends */
         char svc[512] = {0};
