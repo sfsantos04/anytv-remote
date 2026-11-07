@@ -23,7 +23,7 @@ struct BevelButtonStyle: ButtonStyle {
                                        startPoint: .top, endPoint: .bottom)
                     )
                     .overlay(
-                        shape.strokeBorder(
+                        shape.stroke(
                             LinearGradient(colors: [Color.white.opacity(0.35),
                                                     Color.black.opacity(0.45)],
                                            startPoint: .top, endPoint: .bottom),
@@ -37,8 +37,8 @@ struct BevelButtonStyle: ButtonStyle {
                         )
                     )
                     .overlay(
-                        shape.strokeBorder(glow.opacity(configuration.isPressed ? 0.9 : 0.45),
-                                           lineWidth: configuration.isPressed ? 2 : 1)
+                        shape.stroke(glow.opacity(configuration.isPressed ? 0.9 : 0.45),
+                                     lineWidth: configuration.isPressed ? 2 : 1)
                     )
             )
             .scaleEffect(configuration.isPressed ? 0.93 : 1)
