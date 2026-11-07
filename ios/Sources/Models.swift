@@ -31,7 +31,7 @@ enum TVProto: Int, Codable, CaseIterable, Identifiable {
         case .adb: return 5555
         case .roku: return 8060
         case .webos: return 3000
-        case .tizen: return 8001
+        case .tizen: return 8002
         }
     }
 
@@ -47,7 +47,8 @@ enum TVProto: Int, Codable, CaseIterable, Identifiable {
                  + "Configuracoes > Conexao > LG Connect Apps ligado."
         case .tizen:
             return "A TV mostra 'Permitir' ao conectar: aceite com o controle. "
-                 + "Menu > Geral > Rede > Estado do dispositivo ligado."
+                 + "O canal seguro e a porta 8002 (wss); a 8001 responde e fecha com "
+                 + "'notack'. Menu > Geral > Rede > Estado do dispositivo ligado."
         }
     }
 }

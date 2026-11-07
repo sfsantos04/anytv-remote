@@ -360,9 +360,7 @@ int anytv_client_info(anytv_client *c, char *out, size_t outlen) {
         rc = webos_info(&c->ctx, out, outlen);
         break;
     case ANYTV_PROTO_TIZEN:
-        snprintf(out, outlen, "%s|Tizen|",
-                 c->ctx.name[0] ? c->ctx.name : "Samsung TV");
-        rc = NET_OK;
+        rc = tizen_info(&c->ctx, out, outlen);
         break;
     default:
         snprintf(out, outlen, "%s|Android %s|%s",

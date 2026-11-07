@@ -10,6 +10,32 @@
 
 static const char WS_GUID[] = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
+static int ws_write(ws_conn *ws, const void *buf, size_t len) {
+    if (ws->tls) return anytv_tls_send(ws->tls, buf, len) > 0 ? NET_OK : NET_ERR_IO;
+    return net_send_all(ws->fd, buf, len);
+}
+
+static int ws_read_exact(ws_conn *ws, void *buf, size_t len, int timeout_ms) {
+    if (!ws->tls) return net_recv_all(ws->fd, buf, len, timeout_ms);
+    uint8_t *p = (uint8_t *)buf;
+    size_t got = 0;
+    while (got < len) {
+        int r = anytv_tls_recv(ws->tls, p + got, len - got, timeout_ms);
+        if (r == -2) return NET_ERR_TIMEOUT;
+        if (r <= 0) return NET_ERR_IO;
+        got += (size_t)r;
+    }
+    return NET_OK;
+}
+
+static int ws_read_some(ws_conn *ws, void *buf, size_t len, int timeout_ms) {
+    if (!ws->tls) return net_recv_some(ws->fd, buf, len, timeout_ms);
+    int r = anytv_tls_recv(ws->tls, buf, len, timeout_ms);
+    if (r == -2) return NET_ERR_TIMEOUT;
+    if (r == -1) return NET_ERR_IO;
+    return r;
+}
+
 static int accept_for_key(const char *key, char *out, size_t outlen) {
     char buf[128];
     int n = snprintf(buf, sizeof(buf), "%s%s", key, WS_GUID);
@@ -20,8 +46,9 @@ static int accept_for_key(const char *key, char *out, size_t outlen) {
 }
 
 int ws_connect(ws_conn *ws, const char *host, int port, const char *path,
-               int timeout_ms, char *err, size_t errlen) {
+               int use_tls, int timeout_ms, char *err, size_t errlen) {
     ws->fd = -1;
+    ws->tls = NULL;
     ws->closed = 0;
     if (err && errlen) err[0] = 0;
 
@@ -30,10 +57,16 @@ int ws_connect(ws_conn *ws, const char *host, int port, const char *path,
     char key[32];
     if (anytv_base64_encode(nonce, sizeof(nonce), key, sizeof(key)) < 0) return WS_ERR_CONNECT;
 
-    ws->fd = net_connect(host, port, timeout_ms);
-    if (ws->fd < 0) {
-        if (err && errlen) snprintf(err, errlen, "sem conexao em %s:%d", host, port);
-        return WS_ERR_CONNECT;
+    if (use_tls) {
+        ws->tls = anytv_tls_connect(host, port, timeout_ms, err, errlen);
+        if (!ws->tls) return WS_ERR_CONNECT;
+        ws->fd = anytv_tls_fd(ws->tls);
+    } else {
+        ws->fd = net_connect(host, port, timeout_ms);
+        if (ws->fd < 0) {
+            if (err && errlen) snprintf(err, errlen, "sem conexao em %s:%d", host, port);
+            return WS_ERR_CONNECT;
+        }
     }
 
     char req[768];
@@ -43,13 +76,12 @@ int ws_connect(ws_conn *ws, const char *host, int port, const char *path,
                      "Sec-WebSocket-Version: 13\r\n\r\n",
                      path, host, port, key);
     if (n < 0 || (size_t)n >= sizeof(req)) { ws_close(ws); return WS_ERR_HANDSHAKE; }
-    if (net_send_all(ws->fd, req, (size_t)n) != NET_OK) { ws_close(ws); return WS_ERR_IO; }
+    if (ws_write(ws, req, (size_t)n) != NET_OK) { ws_close(ws); return WS_ERR_IO; }
 
-    /* read the HTTP response headers */
     char resp[2048];
     size_t got = 0;
     while (got < sizeof(resp) - 1) {
-        int r = net_recv_some(ws->fd, resp + got, 1, timeout_ms);
+        int r = ws_read_some(ws, resp + got, 1, timeout_ms);
         if (r <= 0) {
             if (err && errlen) snprintf(err, errlen, "sem resposta do handshake");
             ws_close(ws);
@@ -107,7 +139,7 @@ static int send_frame(ws_conn *ws, uint8_t opcode, const uint8_t *payload, size_
     if (!frame) return WS_ERR_IO;
     memcpy(frame, header, hlen);
     for (size_t i = 0; i < len; i++) frame[hlen + i] = payload[i] ^ mask[i % 4];
-    int rc = net_send_all(ws->fd, frame, hlen + len);
+    int rc = ws_write(ws, frame, hlen + len);
     free(frame);
     return rc == NET_OK ? WS_OK : WS_ERR_IO;
 }
@@ -117,38 +149,35 @@ int ws_send_text(ws_conn *ws, const char *text) {
     return send_frame(ws, 0x1, (const uint8_t *)text, strlen(text));
 }
 
-static int read_exact(ws_conn *ws, uint8_t *buf, size_t len, int timeout_ms) {
-    int r = net_recv_all(ws->fd, buf, len, timeout_ms);
-    if (r == NET_OK) return WS_OK;
-    return r == NET_ERR_TIMEOUT ? WS_ERR_TIMEOUT : WS_ERR_IO;
-}
-
-/* Reads a frame; returns payload size (may be 0), sets opcode. */
 static int read_frame(ws_conn *ws, uint8_t *opcode, uint8_t *buf, size_t cap,
                       int timeout_ms) {
     uint8_t head[2];
-    int rc = read_exact(ws, head, 2, timeout_ms);
-    if (rc != WS_OK) return rc;
+    int rc = ws_read_exact(ws, head, 2, timeout_ms);
+    if (rc != NET_OK) return rc == NET_ERR_TIMEOUT ? WS_ERR_TIMEOUT : WS_ERR_IO;
     *opcode = (uint8_t)(head[0] & 0x0f);
     int masked = head[1] & 0x80;
     uint64_t len = head[1] & 0x7f;
     if (len == 126) {
         uint8_t ext[2];
-        if ((rc = read_exact(ws, ext, 2, timeout_ms)) != WS_OK) return rc;
+        if ((rc = ws_read_exact(ws, ext, 2, timeout_ms)) != NET_OK)
+            return rc == NET_ERR_TIMEOUT ? WS_ERR_TIMEOUT : WS_ERR_IO;
         len = ((uint64_t)ext[0] << 8) | ext[1];
     } else if (len == 127) {
         uint8_t ext[8];
-        if ((rc = read_exact(ws, ext, 8, timeout_ms)) != WS_OK) return rc;
+        if ((rc = ws_read_exact(ws, ext, 8, timeout_ms)) != NET_OK)
+            return rc == NET_ERR_TIMEOUT ? WS_ERR_TIMEOUT : WS_ERR_IO;
         len = 0;
         for (int i = 0; i < 8; i++) len = (len << 8) | ext[i];
     }
     uint8_t mask[4] = {0, 0, 0, 0};
     if (masked) {
-        if ((rc = read_exact(ws, mask, 4, timeout_ms)) != WS_OK) return rc;
+        if ((rc = ws_read_exact(ws, mask, 4, timeout_ms)) != NET_OK)
+            return rc == NET_ERR_TIMEOUT ? WS_ERR_TIMEOUT : WS_ERR_IO;
     }
     if (len > cap) len = cap;
     if (len) {
-        if ((rc = read_exact(ws, buf, (size_t)len, timeout_ms)) != WS_OK) return rc;
+        if ((rc = ws_read_exact(ws, buf, (size_t)len, timeout_ms)) != NET_OK)
+            return rc == NET_ERR_TIMEOUT ? WS_ERR_TIMEOUT : WS_ERR_IO;
         if (masked) {
             for (uint64_t i = 0; i < len; i++) buf[i] ^= mask[i % 4];
         }
@@ -168,7 +197,7 @@ int ws_recv_text(ws_conn *ws, char *out, size_t outlen, int timeout_ms) {
         if (n < 0) { rc = n; break; }
         if (opcode == 0x8) { /* close */
             ws->closed = 1;
-            if (used) break;
+            if (used) { rc = (int)used; break; }
             rc = WS_ERR_IO;
             break;
         }
@@ -181,8 +210,6 @@ int ws_recv_text(ws_conn *ws, char *out, size_t outlen, int timeout_ms) {
             memcpy((uint8_t *)out + used, buf, (size_t)n);
             used += (size_t)n;
         }
-        /* FIN bit: read_frame drops it, so a short read means "keep reading"
-         * only when the peer fragments; protocols we speak send whole messages. */
         rc = (int)used;
         break;
     }
@@ -193,7 +220,12 @@ int ws_recv_text(ws_conn *ws, char *out, size_t outlen, int timeout_ms) {
 
 void ws_close(ws_conn *ws) {
     if (!ws) return;
-    if (ws->fd >= 0) net_close(ws->fd);
+    if (ws->tls) {
+        anytv_tls_close(ws->tls);
+        ws->tls = NULL;
+    } else if (ws->fd >= 0) {
+        net_close(ws->fd);
+    }
     ws->fd = -1;
     ws->closed = 1;
 }

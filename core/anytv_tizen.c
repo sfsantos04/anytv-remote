@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #define TIZEN_CHANNEL "/api/v2/channels/samsung.remote.control"
 
@@ -17,8 +18,10 @@ static const char *TIZEN_KEY[ANYTV_CMD_COUNT] = {
 };
 
 uint32_t tizen_caps(void) {
-    /* no public app list and no app launch on this channel */
-    return ANYTV_CAP_KEY | ANYTV_CAP_TEXT | ANYTV_CAP_POWER_OFF | ANYTV_CAP_INFO;
+    /* no public app list and no app launch on this channel; the MAC comes from
+     * http://host:8001/api/v2/ so Wake-on-LAN is possible */
+    return ANYTV_CAP_KEY | ANYTV_CAP_TEXT | ANYTV_CAP_POWER_OFF | ANYTV_CAP_POWER_ON |
+           ANYTV_CAP_INFO;
 }
 
 static void url_encode(const char *in, char *out, size_t outlen) {
@@ -58,26 +61,61 @@ int tizen_connect(proto_ctx *c, int timeout_ms) {
     }
 
     char err[160];
-    int rc = ws_connect(&c->ws, c->host, c->port, path, timeout_ms, err, sizeof(err));
-    if (rc != WS_OK) {
-        snprintf(c->last_error, sizeof(c->last_error), "%s", err);
-        return rc == WS_ERR_TIMEOUT ? NET_ERR_TIMEOUT : NET_ERR_CONNECT;
-    }
-
+    /* 2017+ Tizen TVs only accept the remote channel over wss://8002; the plain
+     * 8001 path answers the upgrade and then closes with "notack". A candidate
+     * only counts when the TV greets us with ms.channel.connect, so we validate
+     * each attempt instead of trusting the upgrade alone. */
+    int cand_port[4] = {c->port, c->port, 8002, 8001};
+    int cand_tls[4] = {1, 0, 1, 0};
     char reply[2048];
-    int got = ws_recv_text(&c->ws, reply, sizeof(reply), timeout_ms);
-    if (got < 0) return got == WS_ERR_TIMEOUT ? NET_ERR_TIMEOUT : NET_ERR_IO;
-
-    char event[64];
-    if (anytv_json_string(reply, "event", event, sizeof(event)) == 0) {
-        if (strcmp(event, "ms.channel.unauthorized") == 0) return NET_ERR_PROTO;
-        if (strcmp(event, "ms.channel.connect") == 0) c->connected = 1;
+    for (int i = 0; i < 4; i++) {
+        int dup = 0;
+        for (int j = 0; j < i; j++) {
+            if (cand_port[j] == cand_port[i] && cand_tls[j] == cand_tls[i]) dup = 1;
+        }
+        if (dup) continue;
+        int attempt_timeout = cand_tls[i] ? 2500 : timeout_ms;
+        int rc = ws_connect(&c->ws, c->host, cand_port[i], path, cand_tls[i],
+                            attempt_timeout, err, sizeof(err));
+        if (getenv("ANYTV_DEBUG")) {
+            fprintf(stderr, "[tizen] tentativa porta=%d tls=%d rc=%d err=%s\n",
+                    cand_port[i], cand_tls[i], rc, err);
+        }
+        if (rc != WS_OK) {
+            if (cand_tls[i]) snprintf(c->last_error, sizeof(c->last_error), "%s", err);
+            continue;
+        }
+        /* the greeting arrives right away when the TV already trusts us; it can
+         * take up to a minute when the user still has to tap "Permitir" */
+        int wait_ms = (i == 0) ? 60000 : 8000;
+        int got = ws_recv_text(&c->ws, reply, sizeof(reply), wait_ms);
+        if (got < 0) {
+            if (getenv("ANYTV_DEBUG")) {
+                fprintf(stderr, "[tizen] sem cumprimento em %d ms\n", wait_ms);
+            }
+            ws_close(&c->ws);
+            continue;
+        }
+        char event[64] = "";
+        anytv_json_string(reply, "event", event, sizeof(event));
+        if (strcmp(event, "ms.channel.connect") != 0) {
+            if (getenv("ANYTV_DEBUG")) {
+                fprintf(stderr, "[tizen] evento inesperado: %s (%.60s)\n", event, reply);
+            }
+            snprintf(c->last_error, sizeof(c->last_error), "%s",
+                     event[0] ? event : "resposta sem ms.channel.connect");
+            ws_close(&c->ws);
+            continue;
+        }
+        char tok[64];
+        if (anytv_json_string(reply, "token", tok, sizeof(tok)) == 0 && tok[0]) {
+            snprintf(c->token, sizeof(c->token), "%s", tok);
+        }
+        c->connected = 1;
+        return NET_OK;
     }
-    char tok[64];
-    if (anytv_json_string(reply, "token", tok, sizeof(tok)) == 0 && tok[0]) {
-        snprintf(c->token, sizeof(c->token), "%s", tok);
-    }
-    return NET_OK;
+    if (!c->last_error[0]) snprintf(c->last_error, sizeof(c->last_error), "%s", err);
+    return NET_ERR_CONNECT;
 }
 
 int tizen_cmd(proto_ctx *c, anytv_cmd cmd) {
@@ -103,4 +141,25 @@ int tizen_text(proto_ctx *c, const char *text) {
 
 int tizen_power_off(proto_ctx *c) {
     return tizen_cmd(c, ANYTV_CMD_POWER);
+}
+
+/* The TV publishes model, wifi MAC and resolution on http://host:8001/api/v2/ */
+int tizen_info(proto_ctx *c, char *out, size_t outlen) {
+    char body[8192];
+    http_response resp;
+    int rc = http_request(c->host, 8001, "GET", "/api/v2/", NULL, NULL, 5000,
+                          body, sizeof(body), &resp);
+    if (rc != NET_OK || resp.status != 200) {
+        snprintf(out, outlen, "%s|Tizen|", c->name[0] ? c->name : "Samsung TV");
+        return NET_OK;
+    }
+    char model[64] = "", mac[40] = "", name[128] = "", res[32] = "";
+    anytv_json_string(body, "modelName", model, sizeof(model));
+    anytv_json_string(body, "wifiMac", mac, sizeof(mac));
+    anytv_json_string(body, "name", name, sizeof(name));
+    anytv_json_string(body, "resolution", res, sizeof(res));
+    if (mac[0]) snprintf(c->mac, sizeof(c->mac), "%s", mac);
+    if (name[0]) snprintf(c->name, sizeof(c->name), "%s", name);
+    snprintf(out, outlen, "%s|Tizen|%s", model[0] ? model : "Samsung TV", res);
+    return NET_OK;
 }

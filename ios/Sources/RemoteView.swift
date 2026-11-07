@@ -171,6 +171,12 @@ struct RemoteView: View {
             var updated = device
             updated.model = result.model.isEmpty ? device.model : result.model
             updated.android = result.android
+            // modelo, resolucao e MAC vem da TV (Tizen: http://host:8001/api/v2/)
+            if let details = try? await client.info() {
+                let parts = details.split(separator: "|", omittingEmptySubsequences: false)
+                if parts.count > 0, !parts[0].isEmpty { updated.model = String(parts[0]) }
+                if parts.count > 2, !parts[2].isEmpty { info = "\(parts[0]) - \(parts[2])" }
+            }
             let token = client.storedToken()
             if !token.isEmpty { updated.token = token }
             let mac = client.discoveredMac()

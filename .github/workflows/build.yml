@@ -15,6 +15,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Dependencias de TLS
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
       - name: Compilar com -Wall -Wextra -Werror
         run: |
           set -euo pipefail
@@ -27,7 +29,9 @@ jobs:
             -o anytv-cli core/anytv_cli.c core/anytv_adb.c core/anytv_keys.c \
             core/anytv_bn.c core/anytv_rsa.c core/anytv_sha1.c core/anytv_facade.c \
             core/anytv_net.c core/anytv_ws.c core/anytv_remote.c \
-            core/anytv_roku.c core/anytv_webos.c core/anytv_tizen.c
+            core/anytv_roku.c core/anytv_webos.c core/anytv_tizen.c \
+            core/anytv_tls_openssl.c core/anytv_tls_securetransport.c \
+            -lssl -lcrypto
       - name: Rodar os testes
         run: |
           set -euo pipefail

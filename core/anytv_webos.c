@@ -67,13 +67,13 @@ static int open_pointer(proto_ctx *c, int timeout_ms) {
     const char *scheme = strstr(socket_path, "://");
     const char *path = scheme ? strchr(scheme + 3, '/') : NULL;
     if (!path) return NET_ERR_PROTO;
-    return ws_connect(&c->pointer, c->host, c->port, path, timeout_ms, NULL, 0) == WS_OK
+    return ws_connect(&c->pointer, c->host, c->port, path, 0, timeout_ms, NULL, 0) == WS_OK
            ? NET_OK : NET_ERR_IO;
 }
 
 int webos_connect(proto_ctx *c, int timeout_ms) {
     char err[160];
-    if (ws_connect(&c->ws, c->host, c->port, "/", timeout_ms, err, sizeof(err)) != WS_OK) {
+    if (ws_connect(&c->ws, c->host, c->port, "/", 0, timeout_ms, err, sizeof(err)) != WS_OK) {
         snprintf(c->last_error, sizeof(c->last_error), "%s", err);
         return NET_ERR_CONNECT;
     }
@@ -91,7 +91,9 @@ int webos_connect(proto_ctx *c, int timeout_ms) {
     if (ws_send_text(&c->ws, msg) != WS_OK) return NET_ERR_IO;
 
     char reply[4096];
-    int got = ws_recv_text(&c->ws, reply, sizeof(reply), timeout_ms);
+    /* the answer comes after the user accepts the pairing prompt on the TV */
+    int wait_ms = timeout_ms > 60000 ? timeout_ms : 60000;
+    int got = ws_recv_text(&c->ws, reply, sizeof(reply), wait_ms);
     if (got < 0) return got == WS_ERR_TIMEOUT ? NET_ERR_TIMEOUT : NET_ERR_IO;
 
     if (strstr(reply, "registered")) {
