@@ -530,7 +530,7 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
         return used > 0 ? 0 : ADB_ERR_PROTOCOL;
     }
     }
-    if (rc != NET_OK) snprintf(c->error, sizeof(c->error), "falha ao listar apps");
+    if (rc != NET_OK && !c->error[0]) snprintf(c->error, sizeof(c->error), "falha ao listar apps");
     return rc == NET_OK ? 0 : ADB_ERR_IO;
 }
 
@@ -549,7 +549,7 @@ int anytv_client_launch(anytv_client *c, const char *app_id) {
         return adb_run(c, cmd, 15000);
     }
     }
-    if (rc != NET_OK) snprintf(c->error, sizeof(c->error), "falha ao abrir o app");
+    if (rc != NET_OK && !c->error[0]) snprintf(c->error, sizeof(c->error), "falha ao abrir o app");
     return rc == NET_OK ? 0 : ADB_ERR_IO;
 }
 
