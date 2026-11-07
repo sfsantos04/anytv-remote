@@ -22,6 +22,7 @@ typedef struct {
 int ws_connect(ws_conn *ws, const char *host, int port, const char *path,
                int use_tls, int timeout_ms, char *err, size_t errlen);
 int ws_send_text(ws_conn *ws, const char *text);
+int ws_ping(ws_conn *ws);
 /* Reads one complete text message (fragments joined, ping answered). */
 int ws_recv_text(ws_conn *ws, char *out, size_t outlen, int timeout_ms);
 void ws_close(ws_conn *ws);

@@ -932,6 +932,22 @@ int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen) {
     return got;
 }
 
+/* Mantem a sessao viva: a TV derruba websocket ocioso e a reconexao seguinte
+ * pode exigir autorizacao de novo. */
+int anytv_client_keepalive(anytv_client *c) {
+    if (!c || !c->connected) return ADB_ERR_IO;
+    if (c->proto == ANYTV_PROTO_TIZEN || c->proto == ANYTV_PROTO_WEBOS) {
+        int rc = ws_ping(&c->ctx.ws);
+        if (rc != WS_OK) {
+            c->connected = 0;
+            snprintf(c->error, sizeof(c->error), "sessao caiu (keepalive)");
+            return ADB_ERR_IO;
+        }
+        return 0;
+    }
+    return 0; /* ADB mantem a sessao sozinho */
+}
+
 int anytv_client_details(anytv_client *c, char *out, size_t outlen) {
     if (!c) return ADB_ERR_PROTOCOL;
     if (c->proto == ANYTV_PROTO_TIZEN) {

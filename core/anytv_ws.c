@@ -130,7 +130,7 @@ static int send_frame(ws_conn *ws, uint8_t opcode, const uint8_t *payload, size_
         for (int i = 0; i < 8; i++) header[2 + i] = (uint8_t)((len >> (56 - 8 * i)) & 0xff);
         hlen = 10;
     }
-    uint8_t mask[4];
+    uint8_t mask[4] = {0, 0, 0, 0};
     if (bn_random_bytes(mask, sizeof(mask)) != 0) return WS_ERR_IO;
     memcpy(header + hlen, mask, 4);
     hlen += 4;
@@ -142,6 +142,13 @@ static int send_frame(ws_conn *ws, uint8_t opcode, const uint8_t *payload, size_
     int rc = ws_write(ws, frame, hlen + len);
     free(frame);
     return rc == NET_OK ? WS_OK : WS_ERR_IO;
+}
+
+/* Ping de keepalive: a TV derruba sessao ociosa, e sessao derrubada faz o app
+ * parecer desconectado (e as vezes pedir autorizacao de novo). */
+int ws_ping(ws_conn *ws) {
+    if (!ws || ws->fd < 0 || ws->closed) return WS_ERR_IO;
+    return send_frame(ws, 0x9, (const uint8_t *)"", 0) == WS_OK ? WS_OK : WS_ERR_IO;
 }
 
 int ws_send_text(ws_conn *ws, const char *text) {

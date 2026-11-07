@@ -186,16 +186,23 @@ static const char *tizen_store_package(const char *app_id) {
 }
 
 int tizen_apps(proto_ctx *c, char *out, size_t outlen) {
-    static char reply[96 * 1024];
+    /* heap, nao static: static aqui e compartilhado entre clientes e duas TVs
+     * simultaneas corrompiam a lista uma da outra */
+    char *reply = (char *)malloc(96 * 1024);
+    if (!reply) {
+        snprintf(c->last_error, sizeof(c->last_error), "sem memoria para a lista");
+        return NET_ERR_IO;
+    }
     if (send_json(c, "{\"method\":\"ms.channel.emit\",\"params\":"
                      "{\"event\":\"ed.installedApp.get\",\"to\":\"host\"}}") != NET_OK) {
         return NET_ERR_IO;
     }
     int have = 0;
     for (int i = 0; i < 6 && !have; i++) {
-        int n = ws_recv_text(&c->ws, reply, sizeof(reply), 5000);
+        int n = ws_recv_text(&c->ws, reply, 96 * 1024, 5000);
         if (n < 0) {
             snprintf(c->last_error, sizeof(c->last_error), "sem resposta ao ed.installedApp.get");
+            free(reply);
             return n == WS_ERR_TIMEOUT ? NET_ERR_TIMEOUT : NET_ERR_IO;
         }
         if (strstr(reply, "appId")) have = 1;
@@ -203,6 +210,7 @@ int tizen_apps(proto_ctx *c, char *out, size_t outlen) {
     if (!have) {
         snprintf(c->last_error, sizeof(c->last_error),
                  "a TV nao devolveu a lista (ed.installedApp.get)");
+        free(reply);
         return NET_ERR_PROTO;
     }
 
@@ -232,6 +240,7 @@ int tizen_apps(proto_ctx *c, char *out, size_t outlen) {
         p += 7;
     }
     if (outlen) out[used < outlen ? used : outlen - 1] = 0;
+    free(reply);
     return count > 0 ? NET_OK : NET_ERR_PROTO;
 }
 

@@ -71,6 +71,8 @@ int anytv_client_info(anytv_client *c, char *out, size_t outlen);
 /* Detalhes da TV em linhas "rotulo\tvalor". Tizen le /api/v2/; os demais
  * devolvem o resumo do info. */
 int anytv_client_details(anytv_client *c, char *out, size_t outlen);
+/* Ping de sessao (Tizen/webOS). Chame a cada ~25 s. */
+int anytv_client_keepalive(anytv_client *c);
 int anytv_client_wake(anytv_client *c);
 int anytv_client_power_on(anytv_client *c);   /* Wake-on-LAN */
 int anytv_client_sleep(anytv_client *c);      /* power off / sleep */

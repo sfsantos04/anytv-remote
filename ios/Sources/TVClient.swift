@@ -64,6 +64,7 @@ final class TVClient: ObservableObject, @unchecked Sendable {
 
     let proto: TVProto
     private let host: String
+    private var keepaliveTask: Task<Void, Never>?
 
     init(proto: TVProto, host: String = "", token: String = "", mac: String = "") {
         self.proto = proto
@@ -162,7 +163,7 @@ final class TVClient: ObservableObject, @unchecked Sendable {
             // >1,5 s = a TV nao reconheceu o token e emitiu outro (pediu Permitir)
             Diagnostics.note("connect fim \(ms)ms \(ms > 1500 ? "LENTO: token trocado" : "rapido")")
         }
-        return try await run { [self] in
+        let result = try await run { [self] in
             guard let handle else { throw TVClientError.failure("cliente indisponivel") }
             let rc = host.withCString { cHost in
                 anytv_client_connect(handle, cHost, Int32(port), 6000, 90000)
@@ -171,9 +172,12 @@ final class TVClient: ObservableObject, @unchecked Sendable {
             return (String(cString: anytv_client_model(handle)),
                     String(cString: anytv_client_android(handle)))
         }
+        startKeepalive()
+        return result
     }
 
     func disconnect() async {
+        stopKeepalive()
         _ = try? await run { [self] in
             if let handle { anytv_client_disconnect(handle) }
         }
@@ -332,6 +336,28 @@ final class TVClient: ObservableObject, @unchecked Sendable {
             guard let handle else { return }
             anytv_client_stream_stop(handle)
         }
+    }
+
+    /// Ping periodico: sessao ociosa e derrubada pela TV e a proxima conexao
+    /// pode pedir autorizacao de novo.
+    func startKeepalive() {
+        keepaliveTask?.cancel()
+        keepaliveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 25 * 1_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                if !self.isConnected { return }
+                _ = try? await self.run { [self] in
+                    guard let handle else { throw TVClientError.notConnected }
+                    if anytv_client_keepalive(handle) != 0 { Diagnostics.note("keepalive falhou") }
+                }
+            }
+        }
+    }
+
+    func stopKeepalive() {
+        keepaliveTask?.cancel()
+        keepaliveTask = nil
     }
 
     /// Detalhes da TV em linhas "rotulo\tvalor" (Tizen le /api/v2/).
