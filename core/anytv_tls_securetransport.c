@@ -37,7 +37,7 @@ static OSStatus io_read(SSLConnectionRef connection, void *data, size_t *dataLen
         return errSSLWouldBlock;
     }
     *dataLength = 0;
-    return ioErr;
+    return errSSLClosedAbort;
 }
 
 static OSStatus io_write(SSLConnectionRef connection, const void *data, size_t *dataLength) {
@@ -53,7 +53,7 @@ static OSStatus io_write(SSLConnectionRef connection, const void *data, size_t *
         return errSSLWouldBlock;
     }
     *dataLength = 0;
-    return ioErr;
+    return errSSLClosedAbort;
 }
 
 anytv_tls *anytv_tls_connect(const char *host, int port, int timeout_ms,
@@ -74,9 +74,8 @@ anytv_tls *anytv_tls_connect(const char *host, int port, int timeout_ms,
     SSLSetConnection(t->ctx, (SSLConnectionRef)(intptr_t)fd);
     SSLSetPeerDomainName(t->ctx, host, strlen(host));
     SSLSetSessionOption(t->ctx, kSSLSessionOptionBreakOnServerAuth, true);
-    /* these TVs use self-signed certificates: no chain to verify */
-    SSLSetAllowsExpiredCerts(t->ctx, true);
-    SSLSetAllowsAnyRoot(t->ctx, true);
+    /* these TVs use self-signed certificates; with BreakOnServerAuth the
+     * handshake resumes after the server certificate arrives, which accepts it */
 
     for (int attempt = 0; attempt < 8; attempt++) {
         OSStatus st = SSLHandshake(t->ctx);
