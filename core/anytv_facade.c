@@ -531,7 +531,8 @@ int anytv_client_app_icon(anytv_client *c, const char *app_id, uint8_t *out, siz
     if (best[0]) {
         got = anytv_pull_apk_entry(c, apk, best, out, outlen);
         int w = 0, h = 0;
-        if (got > 0 && anytv_image_dims(out, (size_t)got, &w, &h)) {
+        if (got > 0 && anytv_image_dims(out, (size_t)got, &w, &h) &&
+            (long)got * 32 >= (long)w * (long)h) {
             c->error[0] = 0;
             return got;
         }
@@ -596,6 +597,9 @@ int anytv_client_app_icon(anytv_client *c, const char *app_id, uint8_t *out, siz
         int w = 0, h = 0;
         if (n > 0 && anytv_image_dims(out, (size_t)n, &w, &h) && w == h && w >= 96) {
             long area = (long)w * (long)h;
+            /* A flat placeholder (grey note, offline glyph) compresses to almost
+             * nothing; real artwork always carries tens of bytes per pixel. */
+            if ((long)n * 32 < area) continue;
             if (w <= 512) {
                 if (area > small_area) {
                     small_area = area;
