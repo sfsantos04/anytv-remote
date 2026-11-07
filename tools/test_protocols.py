@@ -272,7 +272,7 @@ def main():
     # a lista vem do canal remoto (ed.installedApp.get); num mock sem esse evento
     # o app tem de falhar limpo, sem travar e dizendo o motivo
     check("apps rc=" in out.stdout and "installedApp" in out.stdout,
-          "tizen lista pelo canal remoto e reporta falha clara no mock")
+          f"tizen lista pelo canal remoto ({out.stdout.strip()[:120]})")
 
     print(f"\nfalhas={len(FAILS)}")
     return 1 if FAILS else 0

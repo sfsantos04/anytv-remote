@@ -428,6 +428,9 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
         /* remote channel only: it needs no dev-mode host and is the path the
          * Samsung app itself uses, so the sdb connection stays out of this call */
         rc = tizen_apps(&c->ctx, out, outlen);
+        if (rc != NET_OK && c->ctx.last_error[0]) {
+            snprintf(c->error, sizeof(c->error), "%s", c->ctx.last_error);
+        }
         break;
     default: {
         if (!c->connected) return ADB_ERR_IO;
