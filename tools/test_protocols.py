@@ -269,9 +269,10 @@ def main():
     check(any("PATH:/api/v2/channels/samsung.remote.control" in item for item in RECEIVED["tizen"]),
           "tizen canal correto")
     out = run(["127.0.0.1", str(tport), "x", "apps"], {"ANYTV_PROTO": "tizen"})
-    # sem modo desenvolvedor o sdb nao responde, e o app tem de dizer isso
-    check("sdb" in out.stdout.lower() and "rc=" in out.stdout,
-          "tizen tenta o sdb e reporta a falha sem modo desenvolvedor")
+    # a lista vem do canal remoto (ed.installedApp.get); num mock sem esse evento
+    # o app tem de falhar limpo, sem travar e dizendo o motivo
+    check("apps rc=" in out.stdout and "installedApp" in out.stdout,
+          "tizen lista pelo canal remoto e reporta falha clara no mock")
 
     print(f"\nfalhas={len(FAILS)}")
     return 1 if FAILS else 0

@@ -405,21 +405,6 @@ static int tizen_sdb_ready(anytv_client *c) {
     return ADB_OK;
 }
 
-static void sdb_value(const char *line, const char *key, char *out, size_t outlen) {
-    out[0] = 0;
-    const char *k = strstr(line, key);
-    if (!k) return;
-    const char *eq = strchr(k, '=');
-    if (!eq) return;
-    eq++;
-    const char *end = strstr(eq, "-------------");
-    size_t n = end ? (size_t)(end - eq) : strlen(eq);
-    while (n > 0 && (eq[n - 1] == ' ' || eq[n - 1] == '\r' || eq[n - 1] == '-')) n--;
-    if (n >= outlen) n = outlen - 1;
-    memcpy(out, eq, n);
-    out[n] = 0;
-}
-
 static int tizen_sdb_launch(anytv_client *c, const char *app_id) {
     if (tizen_sdb_ready(c) != ADB_OK) return ADB_ERR_IO;
     char svc[256];

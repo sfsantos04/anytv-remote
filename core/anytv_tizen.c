@@ -163,7 +163,11 @@ int tizen_apps(proto_ctx *c, char *out, size_t outlen) {
         }
         if (strstr(reply, "appId")) have = 1;
     }
-    if (!have) return NET_ERR_PROTO;
+    if (!have) {
+        snprintf(c->last_error, sizeof(c->last_error),
+                 "a TV nao devolveu a lista (ed.installedApp.get)");
+        return NET_ERR_PROTO;
+    }
 
     size_t used = 0;
     const char *p = reply;
