@@ -188,6 +188,12 @@ struct RemoteView: View {
     }
 
     private func connect() async {
+        // nunca abre uma segunda sessão na mesma TV: sessão extra = Permitir de novo
+        if client.isConnected {
+            connected = true
+            status = "Conectado por \(device.proto.title)."
+            return
+        }
         status = "Conectando em \(device.host)... \(device.proto.setup)"
         connected = false
         do {

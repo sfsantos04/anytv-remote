@@ -101,8 +101,16 @@ int anytv_client_key_export(const anytv_client *c, uint8_t *out, size_t len) {
 int anytv_client_connect(anytv_client *c, const char *host, int port,
                          int timeout_ms, int auth_wait_ms) {
     /* A TV aceita uma sessao por cliente: reconectar com a sessao viva faz ela
-     * pedir "Permitir" de novo. Ja conectado, nao ha o que fazer. */
-    if (c && c->connected) return 0;
+     * pedir "Permitir" de novo. Ja conectado e com socket vivo, nao ha o que
+     * fazer; se o socket morreu, fecha e conecta de verdade. */
+    if (c && c->connected) {
+        int alive;
+        if (c->proto == ANYTV_PROTO_ADB) alive = c->conn.fd >= 0;
+        else if (c->proto == ANYTV_PROTO_TIZEN || c->proto == ANYTV_PROTO_WEBOS) alive = c->ctx.ws.fd >= 0;
+        else alive = 1;
+        if (alive) return 0;
+        anytv_client_disconnect(c);
+    }
     if (!c || !host) return ADB_ERR_PROTOCOL;
     anytv_client_disconnect(c);
     snprintf(c->ctx.host, sizeof(c->ctx.host), "%s", host);
