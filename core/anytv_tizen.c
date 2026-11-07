@@ -122,6 +122,32 @@ int tizen_connect(proto_ctx *c, int timeout_ms) {
 /* The remote channel can list the installed apps: emitting ed.installedApp.get
  * makes the TV answer with appId/name for every app. This works without the
  * development bridge (and therefore without the host-IP restriction). */
+
+/* The TV reports the icon as a device path that no service exposes (probed on
+ * every open port: 404, echo, or silence; sdb refuses file pull). For the big
+ * brands the official artwork comes from the store page instead. */
+static const char *tizen_store_package(const char *app_id) {
+    static const struct { const char *app_id; const char *pkg; } known[] = {
+        {"11101200001", "com.netflix.ninja"},
+        {"111299001912", "com.google.android.youtube.tv"},
+        {"3201512006785", "com.amazon.avod.thirdpartyclient"},
+        {"3201901017640", "com.disney.disneyplus"},
+        {"3201512006963", "com.plexapp.android"},
+        {"3201606009684", "com.spotify.tv.android"},
+        {"3201808016802", "tv.pluto.android"},
+        {"3201608010191", "deezer.android.app"},
+        {"3202106024097", "com.apple.atve.androidtv.appletv"},
+        {"3202301029760", "com.wbd.stream"},
+        {"3202110025305", "com.cbs.ott"},
+        {"111299001962", "com.tid.enjoy"},
+        {NULL, NULL}
+    };
+    for (int i = 0; known[i].app_id; i++) {
+        if (strcmp(known[i].app_id, app_id) == 0) return known[i].pkg;
+    }
+    return NULL;
+}
+
 int tizen_apps(proto_ctx *c, char *out, size_t outlen) {
     static char reply[96 * 1024];
     if (send_json(c, "{\"method\":\"ms.channel.emit\",\"params\":"
@@ -148,7 +174,13 @@ int tizen_apps(proto_ctx *c, char *out, size_t outlen) {
         name[0] = 0;
         const char *np = strstr(p, "\"name\"");
         if (np) anytv_json_string(np, "name", name, sizeof(name));
-        int wrote = snprintf(out + used, outlen - used, "%s\t%s\t\n", id, name);
+        char icon[160] = "";
+        const char *pkg = tizen_store_package(id);
+        if (pkg) {
+            snprintf(icon, sizeof(icon),
+                     "https://play.google.com/store/apps/details?id=%s", pkg);
+        }
+        int wrote = snprintf(out + used, outlen - used, "%s\t%s\t%s\n", id, name, icon);
         if (wrote < 0 || (size_t)wrote >= outlen - used) break;
         used += (size_t)wrote;
         count++;
