@@ -193,19 +193,39 @@ final class H264StreamPlayer: ObservableObject {
     }
 }
 
-/// Hosts the display layer inside SwiftUI.
+/// Hosts the display layer inside SwiftUI. A dedicated UIView keeps the layer
+/// sized to the view: SwiftUI does not re-run updateUIView on layout changes, so
+/// setting the frame only in makeUIView left the layer at zero size (black box).
+final class VideoHostView: UIView {
+    var player: H264StreamPlayer? {
+        didSet {
+            guard let layer = player?.layer else { return }
+            self.layer.addSublayer(layer)
+            setNeedsLayout()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        player?.layer.frame = bounds
+        CATransaction.commit()
+    }
+}
+
 struct LiveVideoView: UIViewRepresentable {
     let player: H264StreamPlayer
 
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+    func makeUIView(context: Context) -> VideoHostView {
+        let view = VideoHostView()
         view.backgroundColor = .black
-        player.layer.frame = view.bounds
-        view.layer.addSublayer(player.layer)
+        view.player = player
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) {
-        player.layer.frame = view.bounds
+    func updateUIView(_ view: VideoHostView, context: Context) {
+        if view.player !== player { view.player = player }
+        view.setNeedsLayout()
     }
 }

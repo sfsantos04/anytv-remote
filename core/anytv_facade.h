@@ -56,6 +56,12 @@ int anytv_client_launch(anytv_client *c, const char *app_id);
 int anytv_client_stream_start(anytv_client *c, int width, int height, int bitrate_bps, int seconds);
 int anytv_client_stream_read(anytv_client *c, uint8_t *out, size_t outlen, int timeout_ms);
 void anytv_client_stream_stop(anytv_client *c);
+/* scrcpy transport (Android): pushes the server jar supplied by the app, starts
+ * it and opens the video socket. Afterwards use stream_read/stream_stop. */
+int anytv_client_scrcpy_start(anytv_client *c, const uint8_t *jar, size_t jar_len,
+                              int bitrate_bps, int max_fps, int max_size, int timeout_ms);
+int anytv_client_scrcpy_width(const anytv_client *c);
+int anytv_client_scrcpy_height(const anytv_client *c);
 /* ADB only: PNG bytes. */
 int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen);
 int anytv_client_info(anytv_client *c, char *out, size_t outlen);

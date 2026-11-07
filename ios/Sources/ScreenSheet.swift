@@ -12,6 +12,7 @@ struct ScreenSheet: View {
     @State private var image: UIImage?
     @State private var message = ""
     @State private var live = true
+    @State private var preferScrcpy = true
     @State private var auto = true
     @State private var loading = false
     @State private var streamTask: Task<Void, Never>?
@@ -106,7 +107,10 @@ struct ScreenSheet: View {
     private var controls: some View {
         VStack(spacing: 8) {
             if client.supports(Cap.screen) {
-                Toggle("Tela ao vivo (H.264)", isOn: $live)
+                Toggle("Tela ao vivo", isOn: $live)
+                if live && client.proto == .adb {
+                    Toggle("Usar scrcpy (mais quadros)", isOn: $preferScrcpy)
+                }
             }
             if !live {
                 Toggle("Atualizar a cada 2 s", isOn: $auto)
@@ -123,16 +127,31 @@ struct ScreenSheet: View {
     private func startLive() {
         guard streamTask == nil else { return }
         player.reset()
-        message = "Abrindo o encoder da TV..."
+        message = preferScrcpy ? "Enviando o scrcpy para a TV..." : "Abrindo o encoder da TV..."
         streamTask = Task {
+            var useScrcpy = preferScrcpy
             while !Task.isCancelled {
-                do {
-                    try await client.streamStart(seconds: 170)
-                } catch {
-                    message = "Falhou: \(error.localizedDescription)"
-                    break
+                var started = false
+                if useScrcpy {
+                    do {
+                        let size = try await client.scrcpyStart()
+                        message = "Ao vivo via scrcpy · \(size.width)x\(size.height)"
+                        started = true
+                    } catch {
+                        useScrcpy = false
+                        message = "scrcpy falhou (\(error.localizedDescription)); usando o encoder do sistema"
+                    }
                 }
-                message = "Ao vivo"
+                if !started {
+                    do {
+                        try await client.streamStart(seconds: 170)
+                        message = "Ao vivo pelo encoder do sistema"
+                        started = true
+                    } catch {
+                        message = "Falhou: \(error.localizedDescription)"
+                        break
+                    }
+                }
                 var ended = false
                 while !Task.isCancelled, !ended {
                     do {

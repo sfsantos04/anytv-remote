@@ -1,4 +1,5 @@
 /* anytv_facade.c - dispatches the canonical commands to the right transport. */
+#define _POSIX_C_SOURCE 200809L
 #include "anytv_facade.h"
 #include "anytv_adb.h"
 #include "anytv_keys.h"
@@ -6,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 struct anytv_client {
     int proto;
@@ -16,6 +18,19 @@ struct anytv_client {
     int connected;
     uint32_t caps;
     char error[256];
+    /* scrcpy mode: the stream carries 12-byte frame headers instead of raw
+     * Annex-B, so the reader strips them before handing bytes back */
+    int scrcpy;
+    uint8_t sc_hdr[12];
+    size_t sc_hdr_len;
+    uint32_t sc_remaining;
+    int sc_meta_done;
+    int sc_width;
+    int sc_height;
+    char sc_device[64];
+    uint8_t sc_raw[64 * 1024];
+    size_t sc_raw_len;
+    size_t sc_raw_off;
 };
 
 static const char *PROTO_NAMES[] = { "adb", "roku", "webos", "tizen" };
@@ -654,12 +669,144 @@ int anytv_client_stream_start(anytv_client *c, int width, int height, int bitrat
 
 int anytv_client_stream_read(anytv_client *c, uint8_t *out, size_t outlen, int timeout_ms) {
     if (!c) return ADB_ERR_IO;
-    return adb_stream_read(&c->conn, out, outlen, timeout_ms);
+    if (!c->scrcpy) return adb_stream_read(&c->conn, out, outlen, timeout_ms);
+
+    /* scrcpy v1.x frames: 12-byte header (8-byte pts, 4-byte size) + H.264 data.
+     * Headers are stripped here so the decoder only sees Annex-B. */
+    size_t produced = 0;
+    while (produced < outlen) {
+        if (c->sc_remaining > 0) {
+            size_t avail = c->sc_raw_len - c->sc_raw_off;
+            if (avail == 0) {
+                int got = adb_stream_read(&c->conn, c->sc_raw, sizeof(c->sc_raw), timeout_ms);
+                if (got <= 0) return produced > 0 ? (int)produced : got;
+                c->sc_raw_len = (size_t)got;
+                c->sc_raw_off = 0;
+                continue;
+            }
+            size_t take = avail < c->sc_remaining ? avail : c->sc_remaining;
+            size_t space = outlen - produced;
+            if (take > space) take = space;
+            memcpy(out + produced, c->sc_raw + c->sc_raw_off, take);
+            produced += take;
+            c->sc_raw_off += take;
+            c->sc_remaining -= (uint32_t)take;
+            continue;
+        }
+        if (c->sc_hdr_len < sizeof(c->sc_hdr)) {
+            if (c->sc_raw_off >= c->sc_raw_len) {
+                int got = adb_stream_read(&c->conn, c->sc_raw, sizeof(c->sc_raw), timeout_ms);
+                if (got <= 0) return produced > 0 ? (int)produced : got;
+                c->sc_raw_len = (size_t)got;
+                c->sc_raw_off = 0;
+            }
+            c->sc_hdr[c->sc_hdr_len++] = c->sc_raw[c->sc_raw_off++];
+            if (c->sc_hdr_len == sizeof(c->sc_hdr)) {
+                c->sc_remaining = ((uint32_t)c->sc_hdr[8] << 24) | ((uint32_t)c->sc_hdr[9] << 16) |
+                                  ((uint32_t)c->sc_hdr[10] << 8) | c->sc_hdr[11];
+                c->sc_hdr_len = 0;
+            }
+            continue;
+        }
+        break;
+    }
+    return (int)produced;
 }
+
+int anytv_client_scrcpy_start(anytv_client *c, const uint8_t *jar, size_t jar_len,
+                              int bitrate_bps, int max_fps, int max_size, int timeout_ms) {
+    if (!c || c->proto != ANYTV_PROTO_ADB || !c->connected) {
+        if (c) snprintf(c->error, sizeof(c->error), "scrcpy so existe no ADB");
+        return ADB_ERR_IO;
+    }
+    if (!jar || jar_len < 1024) {
+        snprintf(c->error, sizeof(c->error), "servidor scrcpy ausente");
+        return ADB_ERR_IO;
+    }
+    const char *remote = "/data/local/tmp/scrcpy-server.jar";
+    char probe[512];
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "ls -l %s 2>/dev/null", remote);
+    if (adb_shell(&c->conn, cmd, probe, sizeof(probe), 8000) < 0) probe[0] = 0;
+    if (!strstr(probe, "scrcpy-server.jar")) {
+        int rc = adb_push(&c->conn, remote, jar, jar_len, timeout_ms);
+        if (rc != ADB_OK) {
+            snprintf(c->error, sizeof(c->error), "falha ao enviar o scrcpy-server: %.180s",
+                     c->conn.last_error_text);
+            return rc;
+        }
+    }
+    adb_shell(&c->conn, "pkill -f com.genymobile.scrcpy 2>/dev/null; sleep 0.2",
+              probe, sizeof(probe), 5000);
+
+    if (bitrate_bps < 500000) bitrate_bps = 8000000;
+    if (max_fps < 1) max_fps = 60;
+    if (max_size < 0) max_size = 0;
+    snprintf(cmd, sizeof(cmd),
+             "nohup env CLASSPATH=%s app_process / com.genymobile.scrcpy.Server 1.25 "
+             "log_level=info max_size=%d bit_rate=%d max_fps=%d tunnel_forward=true "
+             "send_device_meta=true send_dummy_byte=true control=false cleanup=false "
+             ">/data/local/tmp/anytv-scrcpy.log 2>&1 &",
+             remote, max_size, bitrate_bps, max_fps);
+    if (adb_shell(&c->conn, cmd, probe, sizeof(probe), 8000) < 0) {
+        snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
+        return ADB_ERR_IO;
+    }
+
+    /* The server creates the "scrcpy" abstract socket; give it a moment. */
+    int rc = ADB_ERR_SOCKET;
+    for (int attempt = 0; attempt < 12; attempt++) {
+        rc = adb_stream_start_service(&c->conn, "localabstract:scrcpy", 8000);
+        if (rc == ADB_OK) break;
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 250 * 1000 * 1000 };
+        nanosleep(&ts, NULL);
+        snprintf(cmd, sizeof(cmd), "ls /proc/net/unix >/dev/null 2>&1");
+        char sink[64];
+        adb_shell(&c->conn, cmd, sink, sizeof(sink), 4000);
+    }
+    if (rc != ADB_OK) {
+        snprintf(c->error, sizeof(c->error), "servidor scrcpy nao abriu o socket (%d)", rc);
+        return rc;
+    }
+
+    /* 1 dummy byte, then 64-byte name + width/height as big-endian u16 */
+    uint8_t meta[1 + 64 + 4];
+    size_t got = 0;
+    while (got < sizeof(meta)) {
+        int n = adb_stream_read(&c->conn, meta + got, sizeof(meta) - got, 4000);
+        if (n <= 0) {
+            snprintf(c->error, sizeof(c->error), "sem metadados do scrcpy (%d)", n);
+            adb_stream_stop(&c->conn);
+            return ADB_ERR_PROTOCOL;
+        }
+        got += (size_t)n;
+    }
+    memcpy(c->sc_device, meta + 1, 63);
+    c->sc_device[63] = 0;
+    for (int i = 63; i > 0 && c->sc_device[i - 1] == 0; i--) c->sc_device[i - 1] = 0;
+    c->sc_width = (meta[65] << 8) | meta[66];
+    c->sc_height = (meta[67] << 8) | meta[68];
+    c->scrcpy = 1;
+    c->sc_meta_done = 1;
+    c->sc_hdr_len = 0;
+    c->sc_remaining = 0;
+    c->sc_raw_len = 0;
+    c->sc_raw_off = 0;
+    c->error[0] = 0;
+    return ADB_OK;
+}
+
+int anytv_client_scrcpy_width(const anytv_client *c) { return c ? c->sc_width : 0; }
+int anytv_client_scrcpy_height(const anytv_client *c) { return c ? c->sc_height : 0; }
 
 void anytv_client_stream_stop(anytv_client *c) {
     if (!c) return;
     adb_stream_stop(&c->conn);
+    if (c->scrcpy) {
+        char sink[128];
+        adb_shell(&c->conn, "pkill -f com.genymobile.scrcpy 2>/dev/null", sink, sizeof(sink), 4000);
+        c->scrcpy = 0;
+    }
 }
 
 int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen) {

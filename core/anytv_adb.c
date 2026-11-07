@@ -372,6 +372,13 @@ int adb_connect_ex(adb_conn *c, const char *host, int port, rsa_key *key, int ti
 
 void adb_close(adb_conn *c) {
     if (!c) return;
+    if (c->raw_left) {
+        free(c->raw_left);
+        c->raw_left = NULL;
+        c->raw_left_len = 0;
+        c->raw_left_off = 0;
+    }
+    c->stream_active = 0;
     if (c->fd >= 0) {
 #ifdef ANYTV_HOST_LINUX
         close(c->fd);
@@ -518,6 +525,21 @@ int adb_stream_start(adb_conn *c, const char *command, int timeout_ms) {
     return ADB_OK;
 }
 
+int adb_stream_start_service(adb_conn *c, const char *service, int timeout_ms) {
+    uint32_t lid = 0, rid = 0;
+    c->stream_active = 0;
+    c->sv2_hdr_len = 0;
+    c->sv2_remaining = 0;
+    c->sv2_discard = 0;
+    c->stream_v2 = 0; /* raw service: payload goes straight to the caller */
+    int rc = open_service(c, service, &lid, &rid, timeout_ms);
+    if (rc != ADB_OK) return rc;
+    c->stream_lid = lid;
+    c->stream_rid = rid;
+    c->stream_active = 1;
+    return ADB_OK;
+}
+
 int adb_stream_read(adb_conn *c, uint8_t *out, size_t outlen, int timeout_ms) {
     static uint8_t payload[ADB_MAX_PAYLOAD + 16];
     if (!c->stream_active || !out || !outlen) return 0;
@@ -533,8 +555,28 @@ int adb_stream_read(adb_conn *c, uint8_t *out, size_t outlen, int timeout_ms) {
         }
         if (h.cmd == A_WRTE && h.a1 == c->stream_lid) {
             if (!c->stream_v2) {
+                if (c->raw_left && c->raw_left_off < c->raw_left_len) {
+                    uint32_t avail = c->raw_left_len - c->raw_left_off;
+                    uint32_t n = avail < outlen ? avail : (uint32_t)outlen;
+                    memcpy(out, c->raw_left + c->raw_left_off, n);
+                    c->raw_left_off += n;
+                    return (int)n;
+                }
                 uint32_t n = h.len < outlen ? h.len : (uint32_t)outlen;
                 memcpy(out, payload, n);
+                if (h.len > n) {
+                    /* never drop bytes: a raw service (scrcpy) packs metadata and
+                     * the first frame into the same write */
+                    if (!c->raw_left) c->raw_left = (uint8_t *)malloc(ADB_MAX_PAYLOAD);
+                    if (c->raw_left) {
+                        memcpy(c->raw_left, payload + n, h.len - n);
+                        c->raw_left_len = h.len - n;
+                        c->raw_left_off = 0;
+                    }
+                } else {
+                    c->raw_left_len = 0;
+                    c->raw_left_off = 0;
+                }
                 send_msg(c, A_OKAY, c->stream_lid, c->stream_rid, NULL, 0);
                 return (int)n;
             }
@@ -596,6 +638,74 @@ void adb_stream_stop(adb_conn *c) {
 
 static int sync_send(adb_conn *c, uint32_t lid, uint32_t rid, const void *data, uint32_t len) {
     return send_msg(c, A_WRTE, lid, rid, data, len);
+}
+
+/* Reads one sync response record and returns its tag as an ADB_* code. */
+static int sync_read_record(adb_conn *c, uint32_t lid, uint32_t rid,
+                            char *msg, size_t msglen, int timeout_ms) {
+    static uint8_t payload[ADB_MAX_PAYLOAD + 16];
+    for (;;) {
+        msg_hdr h;
+        int r = read_msg(c, &h, payload, ADB_MAX_PAYLOAD, timeout_ms);
+        if (r != ADB_OK) return r;
+        if (h.cmd == A_CLSE && h.a1 == lid) return ADB_ERR_PROTOCOL;
+        if (h.cmd != A_WRTE || h.a1 != lid) continue;
+        uint32_t tag = h.len >= 4 ? get_le32(payload) : 0;
+        if (msg && msglen) {
+            if (h.len > 8) {
+                uint32_t n = h.len - 8;
+                if (n > msglen - 1) n = msglen - 1;
+                memcpy(msg, payload + 8, n);
+                msg[n] = 0;
+            } else {
+                msg[0] = 0;
+            }
+        }
+        send_msg(c, A_OKAY, lid, rid, NULL, 0);
+        if (tag == A_OKAY) return ADB_OK;
+        if (tag == 0x4c494146u) return ADB_ERR_IO;       /* FAIL */
+        return ADB_ERR_PROTOCOL;
+    }
+}
+
+int adb_push(adb_conn *c, const char *remote_path, const uint8_t *data, size_t len,
+             int timeout_ms) {
+    uint32_t lid = 0, rid = 0;
+    int rc = open_service(c, "sync:", &lid, &rid, timeout_ms);
+    if (rc != ADB_OK) return rc;
+
+    uint8_t req[8];
+    put_le32(req, 0x444e4553u); /* "SEND" */
+    put_le32(req + 4, (uint32_t)strlen(remote_path));
+    if (sync_send(c, lid, rid, req, 8) != ADB_OK) return ADB_ERR_IO;
+    if (sync_send(c, lid, rid, remote_path, (uint32_t)strlen(remote_path)) != ADB_OK) return ADB_ERR_IO;
+
+    static uint8_t chunk[64 * 1024 + 8];
+    size_t off = 0;
+    char msg[160];
+    while (off < len) {
+        size_t n = len - off;
+        if (n > 64 * 1024) n = 64 * 1024;
+        put_le32(chunk, 0x41544144u); /* DATA */
+        put_le32(chunk + 4, (uint32_t)n);
+        memcpy(chunk + 8, data + off, n);
+        if (sync_send(c, lid, rid, chunk, (uint32_t)n + 8) != ADB_OK) return ADB_ERR_IO;
+        off += n;
+        if (sync_read_record(c, lid, rid, msg, sizeof(msg), timeout_ms) != ADB_OK) {
+            set_err(c, ADB_ERR_IO, msg[0] ? msg : "push recusado");
+            return ADB_ERR_IO;
+        }
+    }
+    put_le32(chunk, 0x454e4f44u); /* DONE */
+    put_le32(chunk + 4, 0);
+    if (sync_send(c, lid, rid, chunk, 8) != ADB_OK) return ADB_ERR_IO;
+    int final_rc = sync_read_record(c, lid, rid, msg, sizeof(msg), timeout_ms);
+    send_msg(c, A_CLSE, lid, rid, NULL, 0);
+    if (final_rc != ADB_OK) {
+        set_err(c, ADB_ERR_IO, msg[0] ? msg : "push falhou");
+        return ADB_ERR_IO;
+    }
+    return ADB_OK;
 }
 
 int adb_pull(adb_conn *c, const char *remote_path, uint8_t *out, size_t outlen, int timeout_ms) {

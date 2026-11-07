@@ -21,7 +21,10 @@ targets:
       - path: ../core
         excludes:
           - "anytv_cli.c"
+          - "anytv_tls_stub.c"
       - path: Assets
+        buildPhase: resources
+      - path: Resources/scrcpy-server.jar
         buildPhase: resources
     settings:
       base:

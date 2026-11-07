@@ -203,6 +203,29 @@ final class TVClient: ObservableObject, @unchecked Sendable {
 
     private var streamBuffer = [UInt8](repeating: 0, count: 192 * 1024)
 
+    /// Starts scrcpy: pushes the bundled server jar to the TV, runs it there and
+    /// opens the video socket. Better frame rate than screenrecord and works from
+    /// Android 5.0 up.
+    func scrcpyStart(bitrate: Int = 8_000_000, maxFPS: Int = 60, maxSize: Int = 0,
+                     seconds: Int = 180) async throws -> (width: Int, height: Int) {
+        guard let jarURL = Bundle.main.url(forResource: "scrcpy-server", withExtension: "jar"),
+              let jar = try? Data(contentsOf: jarURL) else {
+            throw TVClientError.failure("scrcpy-server.jar não está no app")
+        }
+        return try await run { [self] in
+            guard let handle else { throw TVClientError.notConnected }
+            let result: (Int32, Int32) = jar.withUnsafeBytes { raw in
+                let base = raw.bindMemory(to: UInt8.self).baseAddress
+                let rc = anytv_client_scrcpy_start(handle, base, jar.count,
+                                                   Int32(bitrate), Int32(maxFPS), Int32(maxSize), 20000)
+                if rc != 0 { return (-1, -1) }
+                return (anytv_client_scrcpy_width(handle), anytv_client_scrcpy_height(handle))
+            }
+            if result.0 < 0 { throw TVClientError.failure(message()) }
+            return (Int(result.0), Int(result.1))
+        }
+    }
+
     /// Starts the device encoder. Native resolution unless width/height are set.
     func streamStart(width: Int = 0, height: Int = 0,
                      bitrate: Int = 4_000_000, seconds: Int = 180) async throws {
