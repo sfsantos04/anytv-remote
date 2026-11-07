@@ -269,7 +269,9 @@ def main():
     check(any("PATH:/api/v2/channels/samsung.remote.control" in item for item in RECEIVED["tizen"]),
           "tizen canal correto")
     out = run(["127.0.0.1", str(tport), "x", "apps"], {"ANYTV_PROTO": "tizen"})
-    check("nao expoe lista" in out.stdout, "tizen declara ausencia de lista de apps")
+    # sem modo desenvolvedor o sdb nao responde, e o app tem de dizer isso
+    check("sdb" in out.stdout.lower() and "rc=" in out.stdout,
+          "tizen tenta o sdb e reporta a falha sem modo desenvolvedor")
 
     print(f"\nfalhas={len(FAILS)}")
     return 1 if FAILS else 0
