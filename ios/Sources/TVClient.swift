@@ -130,6 +130,8 @@ final class TVClient: ObservableObject, @unchecked Sendable {
     }
 
     func connect(host: String, port: Int) async throws -> (model: String, android: String) {
+        Diagnostics.note("connect \(host):\(port) proto=\(proto.rawValue) tokenGuardado=\(!TokenVault.load(host: host, proto: proto).isEmpty)")
+        defer { Diagnostics.note("connect fim") }
         try await run { [self] in
             guard let handle else { throw TVClientError.failure("cliente indisponivel") }
             let rc = host.withCString { cHost in
@@ -148,6 +150,8 @@ final class TVClient: ObservableObject, @unchecked Sendable {
     }
 
     func send(_ cmd: Cmd, repeat count: Int = 1) async throws {
+        Diagnostics.note("send cmd=\(cmd.rawValue) proto=\(proto.rawValue)")
+        defer { Diagnostics.note("send fim") }
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }
             let rc = anytv_client_cmd(handle, Int32(cmd.rawValue), Int32(count))
@@ -179,6 +183,8 @@ final class TVClient: ObservableObject, @unchecked Sendable {
 
     /// Returns (app id, display name) pairs.
     func apps() async throws -> [TVApp] {
+        Diagnostics.note("apps inicio")
+        defer { Diagnostics.note("apps fim") }
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }
             var buffer = [CChar](repeating: 0, count: 128 * 1024)

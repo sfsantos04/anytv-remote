@@ -41,7 +41,6 @@ struct anytv_client {
 static const char *PROTO_NAMES[] = { "adb", "roku", "webos", "tizen" };
 
 static int tizen_sdb_ready(anytv_client *c);
-static int tizen_sdb_apps(anytv_client *c, char *out, size_t outlen);
 static int tizen_sdb_launch(anytv_client *c, const char *app_id);
 
 static uint32_t caps_for(int proto) {
@@ -421,49 +420,6 @@ static void sdb_value(const char *line, const char *key, char *out, size_t outle
     out[n] = 0;
 }
 
-static int tizen_sdb_apps(anytv_client *c, char *out, size_t outlen) {
-    if (tizen_sdb_ready(c) != ADB_OK) return ADB_ERR_IO;
-    static char dump[192 * 1024];
-    if (adb_service_capture(&c->sdb, "shell:0 vd_applist", dump, sizeof(dump), 25000) != 0) {
-        c->sdb_ready = 0;
-        snprintf(c->error, sizeof(c->error), "sdb nao respondeu ao vd_applist");
-        return ADB_ERR_IO;
-    }
-    size_t used = 0;
-    char id[64] = {0}, title[160] = {0};
-    const char *line = dump;
-    int count = 0;
-    while (*line) {
-        const char *eol = strchr(line, '\n');
-        size_t len = eol ? (size_t)(eol - line) : strlen(line);
-        char buf[512];
-        size_t n = len < sizeof(buf) - 1 ? len : sizeof(buf) - 1;
-        memcpy(buf, line, n);
-        buf[n] = 0;
-        if (strstr(buf, "app_id")) {
-            sdb_value(buf, "app_id", id, sizeof(id));
-        } else if (strstr(buf, "app_title")) {
-            sdb_value(buf, "app_title", title, sizeof(title));
-            if (id[0]) {
-                int wrote = snprintf(out + used, outlen - used, "%s\t%s\t\n", id, title);
-                if (wrote < 0 || (size_t)wrote >= outlen - used) break;
-                used += (size_t)wrote;
-                count++;
-                id[0] = 0;
-                title[0] = 0;
-            }
-        }
-        if (!eol) break;
-        line = eol + 1;
-    }
-    if (outlen) out[used < outlen ? used : outlen - 1] = 0;
-    if (!count) {
-        snprintf(c->error, sizeof(c->error), "vd_applist veio vazio");
-        return ADB_ERR_PROTOCOL;
-    }
-    return ADB_OK;
-}
-
 static int tizen_sdb_launch(anytv_client *c, const char *app_id) {
     if (tizen_sdb_ready(c) != ADB_OK) return ADB_ERR_IO;
     char svc[256];
@@ -484,9 +440,9 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
     case ANYTV_PROTO_ROKU: rc = roku_apps(&c->ctx, out, outlen); break;
     case ANYTV_PROTO_WEBOS: rc = webos_apps(&c->ctx, out, outlen); break;
     case ANYTV_PROTO_TIZEN:
-        /* remote channel first (no dev-mode IP restriction), sdb as fallback */
+        /* remote channel only: it needs no dev-mode host and is the path the
+         * Samsung app itself uses, so the sdb connection stays out of this call */
         rc = tizen_apps(&c->ctx, out, outlen);
-        if (rc != NET_OK) rc = tizen_sdb_apps(c, out, outlen);
         break;
     default: {
         if (!c->connected) return ADB_ERR_IO;

@@ -11,6 +11,7 @@ struct RemoteView: View {
     @State private var typed = ""
     @State private var showApps = false
     @State private var showScreen = false
+    @State private var showDiag = false
     @State private var appsAvailable = false
 
     init(device: TVDevice) {
@@ -49,12 +50,18 @@ struct RemoteView: View {
                     Button { showScreen = true } label: { Image(systemName: "rectangle.on.rectangle") }
                         .disabled(!connected)
                 }
+                Menu {
+                    Button("Diagnóstico") { showDiag = true }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
             }
         }
         .sheet(isPresented: $showApps) {
             AppsSheet(client: client, canLaunch: client.supports(Cap.launch))
         }
         .sheet(isPresented: $showScreen) { ScreenSheet(client: client) }
+        .sheet(isPresented: $showDiag) { DiagnosticsView() }
         .task { await connect() }
     }
 
@@ -169,7 +176,7 @@ struct RemoteView: View {
             if label.isEmpty { label = device.proto.title }
             info = label
             status = "Conectado por \(device.proto.title)."
-            appsAvailable = await client.probeApps()
+            appsAvailable = client.supports(Cap.apps)
 
             var updated = device
             updated.model = result.model.isEmpty ? device.model : result.model
