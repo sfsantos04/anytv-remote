@@ -11,6 +11,7 @@ struct RemoteView: View {
     @State private var typed = ""
     @State private var showApps = false
     @State private var showScreen = false
+    @State private var appsAvailable = false
 
     init(device: TVDevice) {
         self.device = device
@@ -39,7 +40,7 @@ struct RemoteView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if client.supports(Cap.apps) {
+                if appsAvailable || client.supports(Cap.apps) {
                     Button { showApps = true } label: { Image(systemName: "square.grid.2x2") }
                         .disabled(!connected)
                 }
@@ -167,6 +168,12 @@ struct RemoteView: View {
             if label.isEmpty { label = device.proto.title }
             info = label
             status = "Conectado por \(device.proto.title)."
+            appsAvailable = await client.probeApps()
+            if device.proto == .tizen {
+                status += appsAvailable
+                    ? " Apps: ok (sdb)."
+                    : " Apps: modo desenvolvedor (sdb 26101) nao respondeu."
+            }
 
             var updated = device
             updated.model = result.model.isEmpty ? device.model : result.model

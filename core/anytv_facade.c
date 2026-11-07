@@ -924,6 +924,18 @@ int anytv_client_scrcpy_start(anytv_client *c, const uint8_t *jar, size_t jar_le
     return ADB_OK;
 }
 
+/* Probes the dev bridge and reports whether the device can list apps. Keeps the
+ * capability mask honest without making the caller know about sdb. */
+int anytv_client_probe_apps(anytv_client *c) {
+    if (!c) return 0;
+    if (c->proto == ANYTV_PROTO_TIZEN) {
+        if (tizen_sdb_ready(c) != ADB_OK) return 0;
+        c->caps |= ANYTV_CAP_APPS | ANYTV_CAP_LAUNCH;
+        return 1;
+    }
+    return (c->caps & ANYTV_CAP_APPS) ? 1 : 0;
+}
+
 int anytv_client_scrcpy_width(const anytv_client *c) { return c ? c->sc_width : 0; }
 int anytv_client_scrcpy_height(const anytv_client *c) { return c ? c->sc_height : 0; }
 

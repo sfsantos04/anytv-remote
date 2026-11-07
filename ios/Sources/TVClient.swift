@@ -76,6 +76,15 @@ final class TVClient: ObservableObject, @unchecked Sendable {
 
     func supports(_ capability: UInt32) -> Bool { caps & capability != 0 }
 
+    /// Asks the transport whether it can list apps (on Samsung this opens the dev
+    /// bridge on 26101) and updates the capability mask accordingly.
+    func probeApps() async -> Bool {
+        (try? await run { [self] in
+            guard let handle else { return false }
+            return anytv_client_probe_apps(handle) != 0
+        }) ?? false
+    }
+
     func storedToken() -> String {
         guard let handle else { return "" }
         return String(cString: anytv_client_token(handle))

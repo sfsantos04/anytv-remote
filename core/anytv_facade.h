@@ -50,6 +50,9 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen);
 /* ADB only: PNG/WebP bytes of the app icon, extracted inside the device with
  * busybox when the app is not on a store. Returns bytes copied or < 0. */
 int anytv_client_app_icon(anytv_client *c, const char *app_id, uint8_t *out, size_t outlen);
+/* Tries the transport that can list apps (on Samsung, the dev bridge) and
+ * updates the capability mask. 1 = lista disponivel. */
+int anytv_client_probe_apps(anytv_client *c);
 int anytv_client_launch(anytv_client *c, const char *app_id);
 /* Live screen: starts the device encoder and returns ADB_OK. read hands back
  * H.264 Annex-B bytes as they arrive; stop closes the pipe and kills the child. */
