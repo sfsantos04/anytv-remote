@@ -32,6 +32,18 @@ jobs:
             core/anytv_roku.c core/anytv_webos.c core/anytv_tizen.c \
             core/anytv_tls_openssl.c core/anytv_tls_securetransport.c \
             -lssl -lcrypto
+          clang -std=c99 -O2 -Wall -Wextra -Werror -DANYTV_HOST_LINUX \
+            -o test_apps tests/test_apps.c core/anytv_adb.c core/anytv_keys.c \
+            core/anytv_bn.c core/anytv_rsa.c core/anytv_sha1.c core/anytv_facade.c \
+            core/anytv_net.c core/anytv_ws.c core/anytv_remote.c \
+            core/anytv_roku.c core/anytv_webos.c core/anytv_tizen.c \
+            core/anytv_tls_openssl.c -lssl -lcrypto
+          clang -std=c99 -O2 -Wall -Wextra -Werror -DANYTV_HOST_LINUX \
+            -o test_stream tests/test_stream.c core/anytv_adb.c core/anytv_keys.c \
+            core/anytv_bn.c core/anytv_rsa.c core/anytv_sha1.c core/anytv_facade.c \
+            core/anytv_net.c core/anytv_ws.c core/anytv_remote.c \
+            core/anytv_roku.c core/anytv_webos.c core/anytv_tizen.c \
+            core/anytv_tls_openssl.c -lssl -lcrypto
       - name: Rodar os testes
         run: |
           set -euo pipefail

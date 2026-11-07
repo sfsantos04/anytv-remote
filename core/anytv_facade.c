@@ -625,6 +625,43 @@ int anytv_client_app_icon(anytv_client *c, const char *app_id, uint8_t *out, siz
     return ADB_ERR_PROTOCOL;
 }
 
+int anytv_client_stream_start(anytv_client *c, int width, int height, int bitrate_bps, int seconds) {
+    if (!c || c->proto != ANYTV_PROTO_ADB || !c->connected) {
+        if (c) snprintf(c->error, sizeof(c->error), "stream so existe no ADB");
+        return ADB_ERR_IO;
+    }
+    int want_size = (width > 0 && height > 0);
+    if (width < 64) width = 640;
+    if (height < 64) height = 360;
+    if (bitrate_bps < 100000) bitrate_bps = 4000000;
+    if (seconds <= 0 || seconds > 180) seconds = 180;
+    /* Android's own encoder: Annex-B H.264 on stdout, no root, no extra binary.
+     * Asking screenrecord to downscale (--size) costs frames on cheap boxes, so
+     * the native size is the default and only explicit values add --size. */
+    char size_arg[48] = "";
+    if (want_size) snprintf(size_arg, sizeof(size_arg), "--size %dx%d ", width, height);
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd),
+             "screenrecord --output-format=h264 --time-limit %d %s--bit-rate %d - 2>/dev/null",
+             seconds, size_arg, bitrate_bps);
+    int rc = adb_stream_start(&c->conn, cmd, 8000);
+    if (rc != ADB_OK) {
+        snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
+        return rc;
+    }
+    return ADB_OK;
+}
+
+int anytv_client_stream_read(anytv_client *c, uint8_t *out, size_t outlen, int timeout_ms) {
+    if (!c) return ADB_ERR_IO;
+    return adb_stream_read(&c->conn, out, outlen, timeout_ms);
+}
+
+void anytv_client_stream_stop(anytv_client *c) {
+    if (!c) return;
+    adb_stream_stop(&c->conn);
+}
+
 int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen) {
     if (!c || c->proto != ANYTV_PROTO_ADB) {
         if (c) snprintf(c->error, sizeof(c->error), "captura de tela so existe no ADB");

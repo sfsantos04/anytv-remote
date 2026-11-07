@@ -496,6 +496,104 @@ int adb_shell(adb_conn *c, const char *command, char *out, size_t outlen, int ti
     return exit_code;
 }
 
+int adb_stream_start(adb_conn *c, const char *command, int timeout_ms) {
+    char service[1024];
+    uint32_t lid = 0, rid = 0;
+    c->stream_active = 0;
+    c->sv2_hdr_len = 0;
+    c->sv2_remaining = 0;
+    c->sv2_discard = 0;
+    c->stream_v2 = 1;
+    snprintf(service, sizeof(service), "shell,v2,raw:%s", command);
+    int rc = open_service(c, service, &lid, &rid, timeout_ms);
+    if (rc != ADB_OK) {
+        c->stream_v2 = 0;
+        snprintf(service, sizeof(service), "shell:%s", command);
+        rc = open_service(c, service, &lid, &rid, timeout_ms);
+        if (rc != ADB_OK) return rc;
+    }
+    c->stream_lid = lid;
+    c->stream_rid = rid;
+    c->stream_active = 1;
+    return ADB_OK;
+}
+
+int adb_stream_read(adb_conn *c, uint8_t *out, size_t outlen, int timeout_ms) {
+    static uint8_t payload[ADB_MAX_PAYLOAD + 16];
+    if (!c->stream_active || !out || !outlen) return 0;
+    for (;;) {
+        msg_hdr h;
+        int r = read_msg(c, &h, payload, ADB_MAX_PAYLOAD, timeout_ms);
+        if (r != ADB_OK) {
+            /* A quiet moment (waiting for the next key frame) is not the end:
+             * keep the stream alive and let the caller poll again. */
+            if (r == ADB_ERR_TIMEOUT) return ADB_ERR_TIMEOUT;
+            c->stream_active = 0;
+            return r;
+        }
+        if (h.cmd == A_WRTE && h.a1 == c->stream_lid) {
+            if (!c->stream_v2) {
+                uint32_t n = h.len < outlen ? h.len : (uint32_t)outlen;
+                memcpy(out, payload, n);
+                send_msg(c, A_OKAY, c->stream_lid, c->stream_rid, NULL, 0);
+                return (int)n;
+            }
+            size_t produced = 0;
+            uint32_t off = 0;
+            while (off < h.len) {
+                if (c->sv2_remaining > 0) {
+                    uint32_t take = h.len - off;
+                    if (take > c->sv2_remaining) take = c->sv2_remaining;
+                    if (!c->sv2_discard) {
+                        size_t space = outlen - produced;
+                        if (space > 0) {
+                            size_t copy = take < space ? take : space;
+                            memcpy(out + produced, payload + off, copy);
+                            produced += copy;
+                        }
+                    }
+                    off += take;
+                    c->sv2_remaining -= take;
+                } else if (c->sv2_hdr_len < sizeof(c->sv2_hdr)) {
+                    c->sv2_hdr[c->sv2_hdr_len++] = payload[off++];
+                    if (c->sv2_hdr_len == sizeof(c->sv2_hdr)) {
+                        uint8_t id = c->sv2_hdr[0];
+                        uint32_t plen = get_le32(c->sv2_hdr + 1);
+                        c->sv2_hdr_len = 0;
+                        if (id == 3) { /* exit packet: the producer finished */
+                            send_msg(c, A_OKAY, c->stream_lid, c->stream_rid, NULL, 0);
+                            c->stream_active = 0;
+                            return (int)produced;
+                        }
+                        c->sv2_remaining = plen;
+                        c->sv2_discard = (id != 1); /* stdout only; stderr is dropped */
+                    }
+                }
+            }
+            send_msg(c, A_OKAY, c->stream_lid, c->stream_rid, NULL, 0);
+            if (produced > 0) return (int)produced;
+            continue;
+        }
+        if (h.cmd == A_CLSE && h.a1 == c->stream_lid) {
+            c->stream_active = 0;
+            return 0;
+        }
+        if (h.cmd == A_OKAY) continue;
+    }
+}
+
+void adb_stream_stop(adb_conn *c) {
+    if (!c) return;
+    if (c->stream_active) {
+        send_msg(c, A_CLSE, c->stream_lid, c->stream_rid, NULL, 0);
+        c->stream_active = 0;
+    }
+    /* Closing the pipe ends screenrecord, but a stuck child keeps the encoder
+     * busy, so kill it explicitly as well. */
+    char sink[128];
+    adb_shell(c, "pkill -f screenrecord 2>/dev/null", sink, sizeof(sink), 3000);
+}
+
 static int sync_send(adb_conn *c, uint32_t lid, uint32_t rid, const void *data, uint32_t len) {
     return send_msg(c, A_WRTE, lid, rid, data, len);
 }

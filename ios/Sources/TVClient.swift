@@ -199,6 +199,48 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         }
     }
 
+    // MARK: - Live screen (H.264 over the ADB shell pipe)
+
+    private var streamBuffer = [UInt8](repeating: 0, count: 192 * 1024)
+
+    /// Starts the device encoder. Native resolution unless width/height are set.
+    func streamStart(width: Int = 0, height: Int = 0,
+                     bitrate: Int = 4_000_000, seconds: Int = 180) async throws {
+        try await run { [self] in
+            guard let handle else { throw TVClientError.notConnected }
+            let rc = anytv_client_stream_start(handle, Int32(width), Int32(height),
+                                               Int32(bitrate), Int32(seconds))
+            if rc != 0 { throw TVClientError.failure(message()) }
+        }
+    }
+
+    /// Returns the next chunk of the stream, an empty Data on a quiet moment
+    /// (read timeout) and nil when the encoder stopped.
+    func streamRead(timeoutMS: Int32 = 1200) async throws -> Data? {
+        try await run { [self] in
+            guard let handle else { throw TVClientError.notConnected }
+            var result: Data?
+            streamBuffer.withUnsafeMutableBufferPointer { buffer in
+                let got = anytv_client_stream_read(handle, buffer.baseAddress, buffer.count, timeoutMS)
+                if got > 0 {
+                    result = Data(buffer[0..<Int(got)])
+                } else if got == -5 {
+                    result = Data()
+                } else {
+                    result = nil
+                }
+            }
+            return result
+        }
+    }
+
+    func streamStop() async {
+        _ = try? await run { [self] in
+            guard let handle else { return }
+            anytv_client_stream_stop(handle)
+        }
+    }
+
     func info() async throws -> String {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }

@@ -51,6 +51,11 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen);
  * busybox when the app is not on a store. Returns bytes copied or < 0. */
 int anytv_client_app_icon(anytv_client *c, const char *app_id, uint8_t *out, size_t outlen);
 int anytv_client_launch(anytv_client *c, const char *app_id);
+/* Live screen: starts the device encoder and returns ADB_OK. read hands back
+ * H.264 Annex-B bytes as they arrive; stop closes the pipe and kills the child. */
+int anytv_client_stream_start(anytv_client *c, int width, int height, int bitrate_bps, int seconds);
+int anytv_client_stream_read(anytv_client *c, uint8_t *out, size_t outlen, int timeout_ms);
+void anytv_client_stream_stop(anytv_client *c);
 /* ADB only: PNG bytes. */
 int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen);
 int anytv_client_info(anytv_client *c, char *out, size_t outlen);
