@@ -131,7 +131,10 @@ int roku_apps(proto_ctx *c, char *out, size_t outlen) {
         char name[128];
         xml_unescape(raw, name, sizeof(name));
 
-        int wrote = snprintf(out + used, outlen - used, "%s\t%s\n", id, name);
+        /* Roku serves each app icon itself, so the tile gets the real artwork
+         * without any cloud lookup: /query/icon/<id> is a PNG. */
+        int wrote = snprintf(out + used, outlen - used, "%s\t%s\thttp://%s:%d/query/icon/%s\n",
+                             id, name, c->host, c->port, id);
         if (wrote < 0 || (size_t)wrote >= outlen - used) break;
         used += (size_t)wrote;
         p = name_end + 6;

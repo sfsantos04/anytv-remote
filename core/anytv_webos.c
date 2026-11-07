@@ -167,7 +167,21 @@ int webos_apps(proto_ctx *c, char *out, size_t outlen) {
             if (anytv_json_string(t, "title", title, sizeof(title)) != 0) title[0] = 0;
         }
         if (!title[0]) snprintf(title, sizeof(title), "%s", id);
-        int wrote = snprintf(out + used, outlen - used, "%s\t%s\n", id, title);
+        /* listApps carries the icon path the TV itself serves over HTTP */
+        char icon[384] = {0};
+        const char *ic = strstr(p, "\"icon\"");
+        if (ic && anytv_json_string(ic, "icon", icon, sizeof(icon)) == 0 && icon[0]) {
+            char full[384];
+            if (icon[0] == '/') {
+                snprintf(full, sizeof(full), "http://%s:%d%s", c->host, c->port, icon);
+            } else if (strstr(icon, "://")) {
+                snprintf(full, sizeof(full), "%s", icon);
+            } else {
+                snprintf(full, sizeof(full), "http://%s:%d/%s", c->host, c->port, icon);
+            }
+            snprintf(icon, sizeof(icon), "%s", full);
+        }
+        int wrote = snprintf(out + used, outlen - used, "%s\t%s\t%s\n", id, title, icon);
         if (wrote < 0 || (size_t)wrote >= outlen - used) break;
         used += (size_t)wrote;
         p += 4;

@@ -144,33 +144,34 @@ final class TVClient: ObservableObject, @unchecked Sendable {
     }
 
     /// Returns (app id, display name) pairs.
-    func apps() async throws -> [(String, String)] {
+    func apps() async throws -> [TVApp] {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }
-            var buffer = [CChar](repeating: 0, count: 96 * 1024)
+            var buffer = [CChar](repeating: 0, count: 128 * 1024)
             let rc = buffer.withUnsafeMutableBufferPointer { out in
                 anytv_client_apps(handle, out.baseAddress, out.count)
             }
             if rc != 0 { throw TVClientError.failure(message()) }
             let raw = String(cString: buffer)
             var seen = Set<String>()
-            var result: [(String, String)] = []
+            var result: [TVApp] = []
             for line in raw.split(separator: "\n") {
-                var item = String(line).trimmingCharacters(in: .whitespaces)
-                if item.hasPrefix("package:") { item = String(item.dropFirst(8)) }
-                var name = ""
-                if let tab = item.firstIndex(of: "\t") {
-                    name = String(item[item.index(after: tab)...])
-                    item = String(item[..<tab])
+                var fields = String(line).components(separatedBy: "\t")
+                guard let first = fields.first, !first.isEmpty else { continue }
+                if first.hasPrefix("package:") {
+                    fields[0] = String(first.dropFirst(8))
                 }
-                if item.isEmpty || seen.contains(item) { continue }
-                if !name.isEmpty && (name.hasPrefix("package:") || name.contains("/")) {
-                    name = ""
-                }
-                seen.insert(item)
-                result.append((item, name))
+                let identifier = fields[0].trimmingCharacters(in: .whitespaces)
+                guard !identifier.isEmpty, !seen.contains(identifier) else { continue }
+                seen.insert(identifier)
+                let name = fields.count > 1 ? fields[1] : ""
+                let iconText = fields.count > 2 ? fields[2] : ""
+                let icon = iconText.isEmpty ? nil : URL(string: iconText)
+                result.append(TVApp(id: identifier,
+                                    name: name.isEmpty ? identifier : name,
+                                    icon: icon))
             }
-            return result.sorted { $0.0 < $1.0 }
+            return result.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         }
     }
 

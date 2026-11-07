@@ -283,6 +283,57 @@ int anytv_client_shell(anytv_client *c, const char *command, char *out, size_t o
     return code;
 }
 
+static int anytv_generic_segment(const char *seg, size_t len) {
+    static const char *skip[] = {"tv", "app", "apps", "pt", "br", "com", "net", "org",
+                                 "mobile", "android", "phone", "tablet", "ninja",
+                                 "free", "pro", "hd", "lite", "beta", "client", NULL};
+    for (int i = 0; skip[i]; i++) {
+        size_t sl = strlen(skip[i]);
+        if (sl != len) continue;
+        size_t k = 0;
+        while (k < len) {
+            char a = seg[k], b = skip[i][k];
+            if (a >= 'A' && a <= 'Z') a = (char)(a + 32);
+            if (a != b) break;
+            k++;
+        }
+        if (k == len) return 1;
+    }
+    return 0;
+}
+
+/* Package ids carry no label, so the readable name comes from the best segment:
+ * com.google.android.youtube.tv -> Youtube, com.tid.enjoy -> Enjoy. */
+static void anytv_pretty_label(const char *pkg, char *out, size_t outlen) {
+    const char *seg[10];
+    size_t seg_len[10];
+    int count = 0;
+    const char *p = pkg;
+    while (*p && count < 10) {
+        const char *dot = strchr(p, '.');
+        size_t len = dot ? (size_t)(dot - p) : strlen(p);
+        if (len) { seg[count] = p; seg_len[count] = len; count++; }
+        if (!dot) break;
+        p = dot + 1;
+    }
+    const char *chosen = pkg;
+    size_t chosen_len = strlen(pkg);
+    for (int i = count - 1; i >= 0; i--) {
+        if (seg_len[i] >= 2 && !anytv_generic_segment(seg[i], seg_len[i])) {
+            chosen = seg[i];
+            chosen_len = seg_len[i];
+            break;
+        }
+    }
+    size_t i = 0;
+    for (; i < chosen_len && i + 1 < outlen; i++) {
+        char ch = chosen[i];
+        if (i == 0 && ch >= 'a' && ch <= 'z') ch = (char)(ch - 32);
+        out[i] = ch;
+    }
+    out[i] = 0;
+}
+
 int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
     if (!c) return ADB_ERR_IO;
     int rc;
@@ -297,19 +348,51 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
         /* `cmd package query-activities --brief` only exists on newer Android and
          * older builds answer "No activities found" with exit 0; pm list packages
          * works from Android 4 to 15, so it is the primary source. */
-        int code = adb_shell(&c->conn, "pm list packages -3", out, outlen, 20000);
+        char raw[32768];
+        int code = adb_shell(&c->conn, "pm list packages -3", raw, sizeof(raw), 20000);
         if (code < 0) {
             snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
             return code;
         }
-        if (out[0] == 0) {
-            code = adb_shell(&c->conn, "pm list packages", out, outlen, 20000);
+        if (raw[0] == 0) {
+            code = adb_shell(&c->conn, "pm list packages", raw, sizeof(raw), 20000);
             if (code < 0) {
                 snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
                 return code;
             }
         }
-        return 0;
+        /* The device only hands out package ids, so the tile shows a readable
+         * name and the official icon is resolved from the Play page by the app. */
+        size_t used = 0;
+        const char *line = raw;
+        while (*line) {
+            const char *eol = strchr(line, '\n');
+            size_t len = eol ? (size_t)(eol - line) : strlen(line);
+            while (len > 0 && (line[len - 1] == '\r' || line[len - 1] == ' ')) len--;
+            const char *pkg = line;
+            size_t plen = len;
+            if (plen > 8 && strncmp(pkg, "package:", 8) == 0) { pkg += 8; plen -= 8; }
+            if (plen == 0 || memchr(pkg, ' ', plen)) {
+                if (!eol) break;
+                line = eol + 1;
+                continue;
+            }
+            char id[128];
+            size_t cl = plen < sizeof(id) - 1 ? plen : sizeof(id) - 1;
+            memcpy(id, pkg, cl);
+            id[cl] = 0;
+            char name[96];
+            anytv_pretty_label(id, name, sizeof(name));
+            int wrote = snprintf(out + used, outlen - used,
+                                 "%s\t%s\thttps://play.google.com/store/apps/details?id=%s\n",
+                                 id, name, id);
+            if (wrote < 0 || (size_t)wrote >= outlen - used) break;
+            used += (size_t)wrote;
+            if (!eol) break;
+            line = eol + 1;
+        }
+        if (outlen) out[used < outlen ? used : outlen - 1] = 0;
+        return used > 0 ? 0 : ADB_ERR_PROTOCOL;
     }
     }
     if (rc != NET_OK) snprintf(c->error, sizeof(c->error), "falha ao listar apps");

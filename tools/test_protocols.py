@@ -156,8 +156,10 @@ def webos_conn(conn, port):
                     "socketPath": f"ws://127.0.0.1:{port}/resources/pointer"}}))
             elif msg.get("uri", "").endswith("listApps"):
                 ws_send(conn, json.dumps({"id": msg["id"], "type": "response", "payload": {
-                    "apps": [{"id": "netflix", "title": "Netflix"},
-                             {"id": "youtube.leanback.v4", "title": "YouTube"}],
+                    "apps": [{"id": "netflix", "title": "Netflix",
+                              "icon": "/resources/icon/1.png"},
+                             {"id": "youtube.leanback.v4", "title": "YouTube",
+                              "icon": f"http://127.0.0.1:{port}/resources/icon/2.png"}],
                     "returnValue": True}}))
             elif msg.get("uri", "").endswith("insertText"):
                 RECEIVED["webos"].append("TEXT:" + msg["payload"].get("text", ""))
@@ -234,6 +236,7 @@ def main():
     check("Cozinha Roku" in out.stdout, f"roku info nome ({out.stdout.strip()[:60]})")
     out = run(["127.0.0.1", str(rport), "x", "apps"], {"ANYTV_PROTO": "roku"})
     check("12\tNetflix" in out.stdout and "2285\tHulu" in out.stdout, "roku lista de apps")
+    check(f"http://127.0.0.1:{rport}/query/icon/12" in out.stdout, "roku icone servido pela propria TV")
     out = run(["127.0.0.1", str(rport), "x", "cmd", "OK"], {"ANYTV_PROTO": "roku"})
     check("/keypress/Select" in RECEIVED["roku"], "roku OK -> Select")
     out = run(["127.0.0.1", str(rport), "x", "cmd", "UP", "3"], {"ANYTV_PROTO": "roku"})
@@ -252,6 +255,8 @@ def main():
     check(any("name:DOWN" in item for item in RECEIVED["pointer"]), "webos botao no pointer socket")
     out = run(["127.0.0.1", str(wport), "x", "apps"], {"ANYTV_PROTO": "webos"})
     check("netflix\tNetflix" in out.stdout, "webos lista de apps")
+    check(f"http://127.0.0.1:{wport}/resources/icon/1.png" in out.stdout, "webos icone relativo vira URL")
+    check(f"http://127.0.0.1:{wport}/resources/icon/2.png" in out.stdout, "webos icone absoluto preservado")
     out = run(["127.0.0.1", str(wport), "x", "text", "oi"], {"ANYTV_PROTO": "webos"})
     check("TEXT:oi" in RECEIVED["webos"], "webos insertText")
     out = run(["127.0.0.1", str(wport), "x", "launch", "netflix"], {"ANYTV_PROTO": "webos"})
