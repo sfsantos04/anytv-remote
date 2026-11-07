@@ -1,0 +1,125 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  core:
+    name: nucleo C (testes)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar com -Wall -Wextra -Werror
+        run: |
+          set -euo pipefail
+          clang -std=c99 -O2 -Wall -Wextra -Werror -DANYTV_HOST_LINUX \
+            -o test_crypto tests/test_crypto.c \
+            core/anytv_bn.c core/anytv_sha1.c core/anytv_rsa.c
+          clang -std=c99 -O2 -Wall -Wextra -Werror -DANYTV_HOST_LINUX \
+            -o test_core tests/test_core.c core/anytv_keys.c
+          clang -std=c99 -O2 -Wall -Wextra -Werror -DANYTV_HOST_LINUX \
+            -o anytv-cli core/anytv_cli.c core/anytv_adb.c core/anytv_keys.c \
+            core/anytv_bn.c core/anytv_rsa.c core/anytv_sha1.c core/anytv_facade.c
+      - name: Rodar os testes
+        run: |
+          set -euo pipefail
+          ./test_crypto /tmp/vector.json
+          ./test_core
+          ./anytv-cli 2>&1 | head -3 || true
+          ls -l anytv-cli
+
+  ipa:
+    name: IPA (iOS)
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          sw_vers
+
+      - name: XcodeGen
+        run: brew install xcodegen
+
+      - name: Gerar projeto
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Compilar (sem assinatura)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/logs"
+          xcodebuild \
+            -project ios/AnyTV.xcodeproj \
+            -scheme AnyTV \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            -resultBundlePath "$RUNNER_TEMP/AnyTV.xcresult" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            build 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Empacotar IPA
+        run: |
+          set -euo pipefail
+          mkdir -p out/Payload
+          cp -R build/Build/Products/Release-iphoneos/AnyTV.app out/Payload/
+          cd out
+          zip -qry ../AnyTV-unsigned.ipa Payload
+          cd ..
+          ls -lh AnyTV-unsigned.ipa
+          shasum -a 256 AnyTV-unsigned.ipa | tee AnyTV-unsigned.ipa.sha256
+
+      - name: Upload do IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyTV-unsigned-ipa
+          path: |
+            AnyTV-unsigned.ipa
+            AnyTV-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publicar release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "build-${{ github.run_number }}" \
+            AnyTV-unsigned.ipa AnyTV-unsigned.ipa.sha256 \
+            --title "AnyTV build ${{ github.run_number }}" \
+            --notes "IPA sem assinatura. Instale com SideStore, AltStore, ESign ou Sideloadly."
+
+      - name: Upload do log e do xcresult (falha)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: anytv-build-failure
+          path: |
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/AnyTV.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Publicar log como release (falha)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/build.log" "log-${{ github.run_number }}.txt" || true
+          gh release create "log-${{ github.run_number }}" "log-${{ github.run_number }}.txt" \
+            --title "falha no build ${{ github.run_number }}" \
+            --notes "Log da compilacao que falhou." || true

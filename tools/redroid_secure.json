@@ -1,0 +1,7 @@
+{"Image":"redroid/redroid:12.0.0_mindthegapps_magisk_widevine",
+ "Cmd":["androidboot.hardware=redroid","androidboot.use_memfd=1","androidboot.redroid_gpu_mode=guest",
+        "service.adb.tcp.port=5555","ro.adb.secure=1"],
+ "HostConfig":{"Privileged":true,"NetworkMode":"bridge",
+   "Binds":["anytvdata:/data"],
+   "PortBindings":{"5555/tcp":[{"HostIp":"","HostPort":"5559"}]},
+   "SecurityOpt":["label=disable"],"Memory":4294967296,"Tmpfs":{"/dev/shm":"size=1g"}}}
