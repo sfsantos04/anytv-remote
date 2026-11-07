@@ -46,6 +46,33 @@ static int send_json(proto_ctx *c, const char *json) {
     return ws_send_text(&c->ws, json) == WS_OK ? NET_OK : NET_ERR_IO;
 }
 
+
+/* Ultimo "token" do JSON, tolerando espaco depois dos dois-pontos (a TV manda
+ * compacto, servidores de teste mandam com espaco). */
+static void json_last_token(const char *json, char *out, size_t outlen) {
+    out[0] = 0;
+    const char *p = json;
+    const char *hit;
+    while ((hit = strstr(p, "\"token\"")) != NULL) {
+        const char *q = hit + 7;
+        while (*q == ' ' || *q == '\t') q++;
+        if (*q == ':') {
+            q++;
+            while (*q == ' ' || *q == '\t') q++;
+            if (*q == '"') {
+                q++;
+                const char *end = strchr(q, '"');
+                if (end && (size_t)(end - q) < outlen - 1) {
+                    size_t n = (size_t)(end - q);
+                    memcpy(out, q, n);
+                    out[n] = 0;
+                }
+            }
+        }
+        p = hit + 7;
+    }
+}
+
 int tizen_connect(proto_ctx *c, int timeout_ms) {
     char name_b64[128], name_enc[256], token_enc[800];
     if (anytv_base64_encode((const uint8_t *)"AnyTV", 5, name_b64, sizeof(name_b64)) < 0)
@@ -115,21 +142,8 @@ int tizen_connect(proto_ctx *c, int timeout_ms) {
          * data.token, sempre no fim do JSON. Procurar "token" pegava o primeiro e
          * congelava um token velho, e a TV pedia "Permitir" a cada conexao
          * (medido: token atual conecta em 91 ms, token velho em 5,9 s). */
-        char tok[64] = "";
-        {
-            const char *found = reply;
-            const char *hit;
-            while ((hit = strstr(found, "\"token\":\"")) != NULL) {
-                const char *value = hit + 9;
-                const char *end_tok = strchr(value, '"');
-                if (end_tok && (size_t)(end_tok - value) < sizeof(tok) - 1) {
-                    size_t n = (size_t)(end_tok - value);
-                    memcpy(tok, value, n);
-                    tok[n] = 0;
-                }
-                found = hit + 8;
-            }
-        }
+        char tok[64];
+        json_last_token(reply, tok, sizeof(tok));
         if (tok[0]) snprintf(c->token, sizeof(c->token), "%s", tok);
         c->connected = 1;
         return NET_OK;
