@@ -3,6 +3,7 @@
  * direct system calls inside anytv_adb.c / anytv_bn.c. */
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
