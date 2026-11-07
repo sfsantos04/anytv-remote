@@ -136,16 +136,19 @@ struct ScreenSheet: View {
                     do {
                         let size = try await client.scrcpyStart()
                         message = "Ao vivo via scrcpy · \(size.width)x\(size.height)"
+                        Diagnostics.note("scrcpy ok \(size.width)x\(size.height)")
                         started = true
                     } catch {
                         useScrcpy = false
                         message = "scrcpy falhou (\(error.localizedDescription)); usando o encoder do sistema"
+                        Diagnostics.note("scrcpy falhou: \(error.localizedDescription)")
                     }
                 }
                 if !started {
                     do {
                         try await client.streamStart(seconds: 170)
                         message = "Ao vivo pelo encoder do sistema"
+                        Diagnostics.note("encoder do sistema iniciado")
                         started = true
                     } catch {
                         message = "Falhou: \(error.localizedDescription)"
@@ -153,6 +156,7 @@ struct ScreenSheet: View {
                     }
                 }
                 var ended = false
+                let frameStart = Date()
                 while !Task.isCancelled, !ended {
                     do {
                         let chunk = try await client.streamRead()
@@ -167,6 +171,8 @@ struct ScreenSheet: View {
                         ended = true
                     }
                 }
+                let secs = max(1.0, Date().timeIntervalSince(frameStart))
+                Diagnostics.note("stream fim: \(player.frames) quadros em \(Int(secs))s = \(Int(Double(player.frames) / secs)) fps")
                 await client.streamStop()
                 if Task.isCancelled { break }
                 // screenrecord stops itself after the time limit; reopen it

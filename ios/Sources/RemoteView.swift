@@ -98,10 +98,11 @@ struct RemoteView: View {
             Button(connected ? "Testar" : "Reconectar") {
                 Task {
                     if connected {
-                        // teste leve: consulta o painel HTTP, sem abrir sessão nova
-                        // na TV (sessão extra = "Permitir" de novo)
+                        // teste leve: mesma leitura que o Android faz no connect,
+                        // sem abrir sessão nova (sessão extra = "Permitir" de novo)
                         if let details = try? await client.info(), !details.isEmpty {
-                            status = "OK: \(details)"
+                            info = details.replacingOccurrences(of: "|", with: " - ")
+                            status = "Testado: \(info)"
                         } else {
                             status = "A TV não respondeu ao teste."
                             connected = false
