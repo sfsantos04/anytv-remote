@@ -22,17 +22,20 @@ enum TVClientError: LocalizedError {
 /// aparelho: se a lista de dispositivos for recriada, o pareamento nao se perde e
 /// a TV deixa de pedir "Permitir" a cada uso.
 enum TokenVault {
-    private static func key(_ host: String, _ proto: TVProto) -> String {
-        "anytv.token.\(proto.rawValue).\(host)"
+    private static func account(_ host: String, _ proto: TVProto) -> String {
+        "token.\(proto.rawValue).\(host)"
     }
 
     static func load(host: String, proto: TVProto) -> String {
-        UserDefaults.standard.string(forKey: key(host, proto)) ?? ""
+        let fromKeychain = Keychain.loadString(account(host, proto))
+        if !fromKeychain.isEmpty { return fromKeychain }
+        return UserDefaults.standard.string(forKey: account(host, proto)) ?? ""
     }
 
     static func save(_ token: String, host: String, proto: TVProto) {
         guard !token.isEmpty else { return }
-        UserDefaults.standard.set(token, forKey: key(host, proto))
+        Keychain.saveString(token, account: account(host, proto))
+        UserDefaults.standard.set(token, forKey: account(host, proto))
     }
 }
 
