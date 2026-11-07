@@ -18,6 +18,24 @@ enum TVClientError: LocalizedError {
 }
 
 
+/// Um cliente por aparelho, vivo enquanto o app existir. Recriar o cliente a cada
+/// visita criava uma sessão nova na TV (que pede "Permitir" de novo) e deixava a
+/// anterior aberta.
+@MainActor
+final class TVClientPool {
+    static let shared = TVClientPool()
+    private var clients: [String: TVClient] = [:]
+
+    func client(for device: TVDevice) -> TVClient {
+        let key = "\(device.proto.rawValue)|\(device.host)"
+        if let existing = clients[key] { return existing }
+        let created = TVClient(proto: device.proto, host: device.host,
+                               token: device.token, mac: device.mac)
+        clients[key] = created
+        return created
+    }
+}
+
 /// Tokens (Samsung token, webOS client-key) guardados por IP, fora do registro do
 /// aparelho: se a lista de dispositivos for recriada, o pareamento nao se perde e
 /// a TV deixa de pedir "Permitir" a cada uso.
@@ -100,6 +118,12 @@ final class TVClient: ObservableObject, @unchecked Sendable {
     }
 
     func supports(_ capability: UInt32) -> Bool { caps & capability != 0 }
+
+    /// O núcleo é a fonte da verdade sobre estar conectado.
+    var isConnected: Bool {
+        guard let handle else { return false }
+        return anytv_client_connected(handle) != 0
+    }
 
     /// Asks the transport whether it can list apps (on Samsung this opens the dev
     /// bridge on 26101) and updates the capability mask accordingly.

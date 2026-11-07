@@ -16,10 +16,7 @@ struct RemoteView: View {
 
     init(device: TVDevice) {
         self.device = device
-        _client = StateObject(wrappedValue: TVClient(proto: device.proto,
-                                                     host: device.host,
-                                                     token: device.token,
-                                                     mac: device.mac))
+        _client = StateObject(wrappedValue: TVClientPool.shared.client(for: device))
     }
 
     var body: some View {
@@ -62,7 +59,19 @@ struct RemoteView: View {
         }
         .sheet(isPresented: $showScreen) { ScreenSheet(client: client) }
         .sheet(isPresented: $showDiag) { DiagnosticsView() }
-        .task { await connect() }
+        .task {
+            // cliente reaproveitado: se a sessão da TV já está de pé, não reconecta
+            if client.isConnected {
+                connected = true
+                status = "Conectado por \(device.proto.title)."
+            } else {
+                await connect()
+            }
+        }
+        .onDisappear {
+            // libera a vaga única da TV; o token fica guardado para a próxima vez
+            Task { await client.disconnect() }
+        }
     }
 
     private var header: some View {
