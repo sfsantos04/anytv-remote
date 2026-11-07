@@ -130,8 +130,19 @@ static int read_msg(adb_conn *c, msg_hdr *h, uint8_t *payload, size_t payload_ca
     h->len = get_le32(hdr + 12);
     uint32_t check = get_le32(hdr + 16);
     uint32_t magic = get_le32(hdr + 20);
-    if (magic != (h->cmd ^ 0xffffffffu)) return ADB_ERR_PROTOCOL;
-    if (h->len > payload_cap) return ADB_ERR_PROTOCOL;
+    if (magic != (h->cmd ^ 0xffffffffu)) {
+        if (getenv("ANYTV_DEBUG")) {
+            fprintf(stderr, "[read] magic ruim cmd=%08x magic=%08x len=%u\n",
+                    h->cmd, magic, h->len);
+        }
+        return ADB_ERR_PROTOCOL;
+    }
+    if (h->len > payload_cap) {
+        if (getenv("ANYTV_DEBUG")) {
+            fprintf(stderr, "[read] payload grande demais len=%u cap=%zu\n", h->len, payload_cap);
+        }
+        return ADB_ERR_PROTOCOL;
+    }
     if (h->len) {
         rc = read_all(c, payload, h->len, timeout_ms);
         if (rc == -2) return ADB_ERR_TIMEOUT;
@@ -393,8 +404,12 @@ static int open_service(adb_conn *c, const char *service, uint32_t *local_id, ui
         msg_hdr h;
         int r = read_msg(c, &h, payload, ADB_MAX_PAYLOAD, timeout_ms);
         if (r != ADB_OK) { rc = r; break; }
+        /* frames from previous streams (a stale CLSE, for instance) must not
+         * abort the new service: only ids that belong to it count */
         if (h.cmd == A_OKAY && h.a1 == lid) { *local_id = lid; *remote_id = h.a0; rc = ADB_OK; break; }
-        if (h.cmd == A_CLSE) { rc = ADB_ERR_PROTOCOL; set_err(c, rc, "service refused"); break; }
+        if (h.cmd == A_CLSE && h.a1 == lid) { rc = ADB_ERR_PROTOCOL; set_err(c, rc, "service refused"); break; }
+        if (h.cmd == A_WRTE && h.a1 == lid) { send_msg(c, A_OKAY, lid, h.a0, NULL, 0); continue; }
+        continue;
     }
     free(payload);
     return rc;
@@ -488,10 +503,15 @@ static int sync_send(adb_conn *c, uint32_t lid, uint32_t rid, const void *data, 
 int adb_pull(adb_conn *c, const char *remote_path, uint8_t *out, size_t outlen, int timeout_ms) {
     uint32_t lid = 0, rid = 0;
     int rc = open_service(c, "sync:", &lid, &rid, timeout_ms);
-    if (rc != ADB_OK) return rc;
+    if (rc != ADB_OK) {
+        if (getenv("ANYTV_DEBUG")) {
+            fprintf(stderr, "[pull] open sync falhou rc=%d err=%s\n", rc, c->last_error_text);
+        }
+        return rc;
+    }
 
     uint8_t req[8];
-    put_le32(req, 0x43524556u); /* "RECV" */
+    put_le32(req, 0x56434552u); /* "RECV" as a little-endian uint32 */
     put_le32(req + 4, (uint32_t)strlen(remote_path));
     if (sync_send(c, lid, rid, req, 8) != ADB_OK) return ADB_ERR_IO;
     if (sync_send(c, lid, rid, remote_path, (uint32_t)strlen(remote_path)) != ADB_OK) return ADB_ERR_IO;
@@ -501,39 +521,73 @@ int adb_pull(adb_conn *c, const char *remote_path, uint8_t *out, size_t outlen, 
     size_t total = 0;
     rc = ADB_OK;
     int done = 0;
+
+    /* The sync service is a byte stream: adbd splits one DATA record across
+     * several WRTE frames, so records must be reassembled here instead of being
+     * parsed per packet (this is what broke pulls on a real Android 7 box). */
+    uint8_t hdr[8];
+    size_t hdr_len = 0;
+    uint32_t remaining = 0;     /* bytes left in the current DATA record */
+    int in_data = 0;
+
     while (!done) {
         msg_hdr h;
         int r = read_msg(c, &h, payload, ADB_MAX_PAYLOAD, timeout_ms);
         if (r != ADB_OK) { rc = r; break; }
         if (h.cmd == A_WRTE && h.a1 == lid) {
             uint32_t off = 0;
-            while (off + 8 <= h.len) {
-                uint32_t tag = get_le32(payload + off);
-                uint32_t sz = get_le32(payload + off + 4);
-                off += 8;
-                if (tag == 0x54414444u) { /* DATA */
-                    if (sz > h.len - off) { rc = ADB_ERR_PROTOCOL; break; }
-                    size_t space = outlen - total;
-                    size_t take = sz < space ? sz : space;
-                    memcpy(out + total, payload + off, take);
-                    total += take;
-                    off += sz;
-                } else if (tag == 0x454e4f44u) { /* DONE */
-                    done = 1;
-                    rc = (int)total;
-                    break;
-                } else if (tag == 0x4c494146u) { /* FAIL */
-                    rc = ADB_ERR_IO;
-                    set_err(c, rc, "pull failed (FAIL response)");
-                    done = 1;
-                    break;
+            while (off < h.len && !done) {
+                if (!in_data) {
+                    size_t need = sizeof(hdr) - hdr_len;
+                    size_t take = (h.len - off) < need ? (h.len - off) : need;
+                    memcpy(hdr + hdr_len, payload + off, take);
+                    hdr_len += take;
+                    off += (uint32_t)take;
+                    if (hdr_len < sizeof(hdr)) break;
+                    uint32_t tag = get_le32(hdr);
+                    uint32_t sz = get_le32(hdr + 4);
+                    hdr_len = 0;
+                    if (tag == 0x41544144u) {          /* DATA */
+                        remaining = sz;
+                        in_data = 1;
+                        if (remaining == 0) in_data = 0;
+                    } else if (tag == 0x454e4f44u) {    /* DONE */
+                        done = 1;
+                        rc = (int)total;
+                    } else if (tag == 0x4c494146u) {    /* FAIL */
+                        if (getenv("ANYTV_DEBUG")) {
+                            char msg[128] = "";
+                            uint32_t mlen = sz < (h.len - off) ? sz : (h.len - off);
+                            if (mlen >= sizeof(msg)) mlen = sizeof(msg) - 1;
+                            memcpy(msg, payload + off, mlen);
+                            msg[mlen] = 0;
+                            fprintf(stderr, "[pull] FAIL msg=\"%s\"\n", msg);
+                        }
+                        rc = ADB_ERR_IO;
+                        set_err(c, rc, "pull failed (FAIL response)");
+                        done = 1;
+                    } else {
+                        if (getenv("ANYTV_DEBUG")) {
+                            fprintf(stderr, "[pull] tag desconhecido %08x (%02x%02x%02x%02x)\n",
+                                    tag, hdr[0], hdr[1], hdr[2], hdr[3]);
+                        }
+                        rc = ADB_ERR_PROTOCOL;
+                        done = 1;
+                    }
                 } else {
-                    rc = ADB_ERR_PROTOCOL;
-                    done = 1;
-                    break;
+                    uint32_t avail = h.len - off;
+                    uint32_t take = avail < remaining ? avail : remaining;
+                    if (total < outlen) {
+                        size_t space = outlen - total;
+                        size_t copy = take < space ? take : space;
+                        memcpy(out + total, payload + off, copy);
+                        total += copy;
+                    }
+                    off += take;
+                    remaining -= take;
+                    if (remaining == 0) in_data = 0;
                 }
             }
-            if (rc < 0 && done) break;
             if (send_msg(c, A_OKAY, lid, rid, NULL, 0) != ADB_OK) { rc = ADB_ERR_IO; break; }
         } else if (h.cmd == A_CLSE && h.a1 == lid) {
             rc = (int)total;

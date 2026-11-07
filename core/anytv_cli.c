@@ -157,7 +157,17 @@ int main(int argc, char **argv) {
 
     char out[65536];
     int code = 0;
-    if (strcmp(cmd, "raw") == 0) {
+    if (strcmp(cmd, "pull") == 0) {
+        size_t cap = 24u * 1024 * 1024;
+        uint8_t *buf = (uint8_t *)malloc(cap);
+        int got = buf ? adb_pull(&c, argc > 5 ? argv[5] : "/sdcard/x", buf, cap, 30000) : -99;
+        printf("pull rc=%d\n", got);
+        if (got > 0 && argc > 6) {
+            FILE *f = fopen(argv[6], "wb");
+            if (f) { fwrite(buf, 1, (size_t)got, f); fclose(f); printf("wrote %s\n", argv[6]); }
+        }
+        free(buf);
+    } else if (strcmp(cmd, "raw") == 0) {
         /* debug: open a raw service and dump the frames the device sends */
         char svc[512] = {0};
         for (int i = 5; i < argc; i++) {

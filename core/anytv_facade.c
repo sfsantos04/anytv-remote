@@ -294,14 +294,20 @@ int anytv_client_apps(anytv_client *c, char *out, size_t outlen) {
         return ADB_ERR_PROTOCOL;
     default: {
         if (!c->connected) return ADB_ERR_IO;
-        int code = adb_shell(&c->conn,
-                             "cmd package query-activities --brief -c "
-                             "android.intent.category.LEANBACK_LAUNCHER 2>/dev/null || "
-                             "pm list packages -3",
-                             out, outlen, 20000);
+        /* `cmd package query-activities --brief` only exists on newer Android and
+         * older builds answer "No activities found" with exit 0; pm list packages
+         * works from Android 4 to 15, so it is the primary source. */
+        int code = adb_shell(&c->conn, "pm list packages -3", out, outlen, 20000);
         if (code < 0) {
             snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
             return code;
+        }
+        if (out[0] == 0) {
+            code = adb_shell(&c->conn, "pm list packages", out, outlen, 20000);
+            if (code < 0) {
+                snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
+                return code;
+            }
         }
         return 0;
     }
