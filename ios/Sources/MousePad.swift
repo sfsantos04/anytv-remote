@@ -10,6 +10,7 @@ struct MousePad: View {
 
     @State private var stepSize: CGFloat = 15
     @State private var base: CGSize = .zero
+    @State private var cursor: CGSize = .zero      // posição do cursor no pad
     @State private var lastSent = ""
     @State private var sendCount = 0
 
@@ -25,6 +26,11 @@ struct MousePad: View {
                 Label("Touchpad", systemImage: "cursorarrow.motionlines")
                     .font(.headline)
                 Spacer()
+                Button("Centralizar") {
+                    cursor = .zero
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }
+                .font(.caption)
                 Button("Fechar", action: onClose)
             }
 
@@ -39,13 +45,26 @@ struct MousePad: View {
                     )
 
                 VStack(spacing: 6) {
-                    Image(systemName: "cursorarrow")
-                        .font(.system(size: 30, weight: .light))
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "rectangle.dashed")
+                        .font(.system(size: 26, weight: .ultraLight))
+                        .foregroundStyle(.tertiary)
                     Text("arraste para mover · toque para OK")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+
+                // cursor que mostra por onde o dedo está levando o foco da TV
+                Circle()
+                    .fill(Color.accentColor.opacity(0.22))
+                    .frame(width: 66, height: 66)
+                    .overlay(Circle().stroke(Color.accentColor.opacity(0.55), lineWidth: 1.5))
+                    .overlay(
+                        Image(systemName: "cursorarrow.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Color.accentColor)
+                    )
+                    .offset(cursor)
+                    .allowsHitTesting(false)
 
                 // área de gesto por cima de tudo
                 Color.clear
@@ -99,14 +118,24 @@ struct MousePad: View {
             let dy = t.height - base.height
             guard abs(dx) >= step || abs(dy) >= step else { break }
             if abs(dx) >= abs(dy) {
-                if dx > 0 { send(.right, "→"); base.width += step }
-                else { send(.left, "←"); base.width -= step }
+                if dx > 0 { send(.right, "→"); base.width += step; nudge(dx: step, dy: 0) }
+                else { send(.left, "←"); base.width -= step; nudge(dx: -step, dy: 0) }
             } else {
-                if dy > 0 { send(.down, "↓"); base.height += step }
-                else { send(.up, "↑"); base.height -= step }
+                if dy > 0 { send(.down, "↓"); base.height += step; nudge(dx: 0, dy: step) }
+                else { send(.up, "↑"); base.height -= step; nudge(dx: 0, dy: -step) }
             }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
+    }
+
+    /// Move o cursor visual dentro do pad, sem sair dos limites.
+    private func nudge(dx: CGFloat, dy: CGFloat) {
+        let limitX: CGFloat = 120, limitY: CGFloat = 160
+        var x = cursor.width + dx
+        var y = cursor.height + dy
+        x = max(-limitX, min(limitX, x))
+        y = max(-limitY, min(limitY, y))
+        cursor = CGSize(width: x, height: y)
     }
 
     private func actionButton(_ title: String, _ icon: String,

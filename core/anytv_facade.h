@@ -79,6 +79,7 @@ int anytv_client_probe_root(anytv_client *c, char *out, size_t outlen);
  * servidor e abre video+controle; fastkey injeta um keycode do Android. */
 int anytv_client_fastkeys_start(anytv_client *c, const uint8_t *jar, size_t jar_len);
 int anytv_client_fastkey(anytv_client *c, int keycode, int repeat);
+void anytv_client_fastkeys_stop(anytv_client *c);
 int anytv_client_wake(anytv_client *c);
 int anytv_client_power_on(anytv_client *c);   /* Wake-on-LAN */
 int anytv_client_sleep(anytv_client *c);      /* power off / sleep */

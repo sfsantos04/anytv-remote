@@ -1062,6 +1062,18 @@ int anytv_client_fastkeys_start(anytv_client *c, const uint8_t *jar, size_t jar_
     return ADB_OK;
 }
 
+/* Encerra o canal rápido e o servidor. Precisa ser chamado antes de abrir o
+ * espelhamento: dois servidores scrcpy ao mesmo tempo travam estes aparelhos. */
+void anytv_client_fastkeys_stop(anytv_client *c) {
+    if (!c) return;
+    if (c->conn.stream_active) adb_stream_stop(&c->conn);
+    c->conn.ctl_active = 0;
+    if (c->proto == ANYTV_PROTO_ADB && c->connected) {
+        char sink[64];
+        adb_shell(&c->conn, "pkill -f com.genymobile.scrcpy 2>/dev/null", sink, sizeof(sink), 4000);
+    }
+}
+
 static void put_be32(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
     p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)v;

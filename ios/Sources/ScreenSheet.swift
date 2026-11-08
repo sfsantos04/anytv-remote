@@ -130,6 +130,10 @@ struct ScreenSheet: View {
         message = preferScrcpy ? "Enviando o scrcpy para a TV..." : "Abrindo o encoder da TV..."
         streamTask = Task {
             var useScrcpy = preferScrcpy
+            if useScrcpy {
+                // Um servidor scrcpy por vez: dois ao mesmo tempo travam o box.
+                await client.stopFastKeys()
+            }
             while !Task.isCancelled {
                 var started = false
                 if useScrcpy {
@@ -190,7 +194,11 @@ struct ScreenSheet: View {
     private func stopLive() {
         streamTask?.cancel()
         streamTask = nil
-        Task { await client.streamStop() }
+        Task {
+            await client.streamStop()
+            // volta o canal rápido de teclas depois de fechar o espelhamento
+            if client.proto == .adb { await client.startFastKeys() }
+        }
     }
 
     private func refresh() async {

@@ -256,6 +256,14 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         return ok
     }
 
+    /// Encerra o canal rápido (antes de abrir o espelhamento).
+    func stopFastKeys() async {
+        _ = try? await run { [self] in
+            if let handle { anytv_client_fastkeys_stop(handle) }
+        }
+        Diagnostics.note("fastkeys encerrado")
+    }
+
     func text(_ value: String) async throws {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }
