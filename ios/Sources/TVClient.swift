@@ -186,6 +186,33 @@ final class TVClient: ObservableObject, @unchecked Sendable {
     /// Tempo do último comando, para o app mostrar quando o aparelho está lento.
     private(set) var lastCommandMS: Int = 0
 
+    // Teclas não entram em fila: se uma está em curso, o próximo toque apenas
+    // substitui o pendente. Sem isso, um comando travado segurava todos os
+    // seguintes e o atraso crescia a cada toque (34 s depois de poucos toques).
+    private var keyBusy = false
+    private var pendingKey: (Cmd, Int)?
+
+    func sendKey(_ cmd: Cmd, repeat count: Int = 1) {
+        if keyBusy {
+            pendingKey = (cmd, count)
+            return
+        }
+        keyBusy = true
+        Task {
+            try? await send(cmd, repeat: count)
+            keyBusy = false
+            if let next = pendingKey {
+                pendingKey = nil
+                sendKey(next.0, repeat: next.1)
+            }
+        }
+    }
+
+    /// Limpa o estado de teclas (ao desconectar ou trocar de aparelho).
+    func resetKeyQueue() {
+        pendingKey = nil
+    }
+
     func send(_ cmd: Cmd, repeat count: Int = 1) async throws {
         let t0 = Date()
         defer {

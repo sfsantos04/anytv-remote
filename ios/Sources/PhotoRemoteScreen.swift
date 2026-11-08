@@ -61,8 +61,9 @@ struct PhotoRemoteScreen: View {
                         imageSize: art.size,
                         keys: art.keys,
                         special: handleSpecial) { cmd, _ in
+                client.sendKey(cmd)
                 Task {
-                    try? await client.send(cmd)
+                    try? await Task.sleep(nanoseconds: 250_000_000)
                     latency = client.lastCommandMS
                 }
             }

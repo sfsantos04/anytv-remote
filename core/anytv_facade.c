@@ -284,10 +284,9 @@ static int adb_cmd(anytv_client *c, anytv_cmd cmd, int repeat) {
         size_t used = strlen(line);
         snprintf(line + used, sizeof(line) - used, " %d", ADB_CODES[cmd]);
     }
-    /* caminho comprovado: abre o servico, espera o fim e reporta erro.
-     * (o canal persistente sem espera chegou a nao entregar nada no aparelho,
-     * entao voltou para tras ate poder ser testado com o box respondendo) */
-    return adb_run(c, line, 8000);
+    /* Caminho comprovado, com teto curto: se o aparelho travar, o comando
+     * desiste em 2,5 s em vez de segurar a fila por 8 s. */
+    return adb_run(c, line, 2500);
 }
 
 int anytv_client_cmd(anytv_client *c, int cmd, int repeat) {
