@@ -20,12 +20,38 @@ struct PhotoRemoteScreen: View {
     @State private var showText = false
     @State private var typed = ""
 
+    @State private var wantKeyboard = false
+
     private var art: (name: String, keys: [HotKey]) {
         proto == .tizen ? ("samsung.jpg", RemoteArt.samsung)
                        : ("android.jpg", RemoteArt.android)
     }
 
     var body: some View {
+        Group {
+            if RemoteArt.has(art.name) {
+                photoRemote
+            } else {
+                // rede de seguranca: se a imagem faltar no pacote, o controle
+                // desenhado em codigo assume (nunca fica em branco)
+                vectorRemote
+            }
+        }
+        .background(Color.black)
+    }
+
+    @ViewBuilder
+    private var vectorRemote: some View {
+        if proto == .tizen {
+            SamsungRemote(client: client, title: "Samsung",
+                          canApps: canApps, canScreen: canScreen,
+                          onClose: onClose)
+        } else {
+            AndroidPad(client: client, title: "Android", wantKeyboard: $wantKeyboard)
+        }
+    }
+
+    private var photoRemote: some View {
         ZStack(alignment: .topLeading) {
             PhotoRemote(imageName: art.name,
                         imageSize: RemoteArt.base,
@@ -69,7 +95,6 @@ struct PhotoRemoteScreen: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
         }
-        .background(Color.black)
         .statusBarHidden(false)
         .sheet(isPresented: $showApps) {
             AppsSheet(client: client, canLaunch: client.supports(Cap.launch))

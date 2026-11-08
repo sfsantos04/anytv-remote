@@ -79,6 +79,14 @@ enum RemoteArt {
 
     /// Carrega a imagem do controle direto do bundle, com fallback pelo caminho
     /// do arquivo (Image(named:) falha quando o recurso vem solto no pacote).
+    /// Existe no pacote? (decide entre imagem e controle desenhado)
+    static func has(_ name: String) -> Bool {
+        let plain = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension.isEmpty ? "jpg" : (name as NSString).pathExtension
+        if UIImage(named: name) != nil || UIImage(named: plain) != nil { return true }
+        return Bundle.main.url(forResource: plain, withExtension: ext) != nil
+    }
+
     static func image(named name: String) -> Image {
         let plain = (name as NSString).deletingPathExtension
         let ext = (name as NSString).pathExtension.isEmpty ? "jpg" : (name as NSString).pathExtension
