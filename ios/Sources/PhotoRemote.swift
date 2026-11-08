@@ -31,7 +31,7 @@ struct PhotoRemote: View {
                                  y: (geo.size.height - drawn.height) / 2)
 
             ZStack(alignment: .topLeading) {
-                Image(imageName)
+                RemoteArt.image(named: imageName)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: drawn.width, height: drawn.height)
@@ -76,6 +76,23 @@ struct PhotoRemote: View {
 
 enum RemoteArt {
     static let base = CGSize(width: 1280, height: 2660)   // render original (2x)
+
+    /// Carrega a imagem do controle direto do bundle, com fallback pelo caminho
+    /// do arquivo (Image(named:) falha quando o recurso vem solto no pacote).
+    static func image(named name: String) -> Image {
+        let plain = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension.isEmpty ? "jpg" : (name as NSString).pathExtension
+        if let ui = UIImage(named: name) ?? UIImage(named: plain) {
+            return Image(uiImage: ui)
+        }
+        if let url = Bundle.main.url(forResource: plain, withExtension: ext),
+           let data = try? Data(contentsOf: url), let ui = UIImage(data: data) {
+            Diagnostics.note("controle: imagem \(name) carregada por arquivo")
+            return Image(uiImage: ui)
+        }
+        Diagnostics.note("controle: imagem \(name) NAO encontrada no pacote")
+        return Image(systemName: "exclamationmark.triangle.fill")
+    }
 
     /// Camadas de toque da Samsung, em coordenadas da imagem 1280×2660.
     static let samsung: [HotKey] = {
