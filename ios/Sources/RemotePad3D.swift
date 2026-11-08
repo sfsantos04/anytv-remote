@@ -1,8 +1,8 @@
 import SwiftUI
 
-// Controle no formato do One Remote da Samsung: corpo escuro com brilho de
-// acrilico, roda direcional em relevo e teclas com profundidade (sombra
-// projetada + realce no topo). Cada tecla afunda ao toque e da retorno tatil.
+// Controle no formato do One Remote da Samsung. Topo: power (esquerda) e fonte
+// (direita). Na mesma coluna, na altura das setas laterais do cursor, ficam o
+// 123 e o voltar. Sem teclas coloridas.
 
 private let graphiteTop = Color(red: 0.20, green: 0.22, blue: 0.24)
 private let graphiteBottom = Color(red: 0.08, green: 0.09, blue: 0.10)
@@ -52,6 +52,8 @@ struct BevelButtonStyle: ButtonStyle {
     }
 }
 
+private let wheelSide: CGFloat = 188
+
 struct RemotePad3D: View {
     let client: TVClient
     var title: String
@@ -71,22 +73,17 @@ struct RemotePad3D: View {
     var body: some View {
         VStack(spacing: 18) {
             topRow
-            wheel
+            wheelWithSides
             rockers
-            bottomRow
-            if showNumbers {
-                numberPad
-            } else {
-                colorRow
-            }
+            if showNumbers { numberPad } else { bottomRow }
             Text(lastSent.isEmpty ? " " : lastSent)
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.35))
                 .frame(height: 12)
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 20)
-        .padding(.bottom, 26)
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 24)
         .frame(maxWidth: 330)
         .background(body3D)
         .sheet(isPresented: $showInfo) { infoSheet }
@@ -110,7 +107,6 @@ struct RemotePad3D: View {
                         lineWidth: 1.5)
             )
             .overlay(
-                // brilho de acrilico no alto
                 RoundedRectangle(cornerRadius: 54, style: .continuous)
                     .fill(
                         LinearGradient(colors: [Color.white.opacity(0.14), .clear],
@@ -122,74 +118,81 @@ struct RemotePad3D: View {
             .shadow(color: .black.opacity(0.55), radius: 26, x: 0, y: 18)
     }
 
-    // MARK: - Topo
+    // MARK: - Topo: power e fonte
 
     private var topRow: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(spacing: 10) {
-                Button {
-                    tap(.power, "Power")
-                } label: {
-                    Image(systemName: "power")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.95, green: 0.35, blue: 0.32))
-                        .frame(width: 42, height: 38)
-                }
-                .buttonStyle(BevelButtonStyle(glow: Color.red.opacity(0.5)))
-
-                // 123 fica logo abaixo do power, como no controle do Android
-                }
+        HStack(alignment: .center) {
+            Button { tap(.power, "Power") } label: {
+                Image(systemName: "power")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.95, green: 0.35, blue: 0.32))
+                    .frame(width: 44, height: 40)
+            }
+            .buttonStyle(BevelButtonStyle(glow: Color.red.opacity(0.5)))
 
             Spacer(minLength: 0)
 
-            VStack(spacing: 2) {
-                Text(title)
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(1)
-                Capsule()
-                    .fill(Color.white.opacity(0.10))
-                    .frame(width: 34, height: 3)
-            }
-            .padding(.top, 8)
+            Text(title)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.40))
+                .lineLimit(1)
+                .frame(maxWidth: 110)
 
             Spacer(minLength: 0)
 
-            VStack(spacing: 10) {
-                Button {
-                    tap(.input, "Fonte")
-                } label: {
-                    Image(systemName: "rectangle.on.rectangle")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .frame(width: 42, height: 38)
-                }
-                .buttonStyle(BevelButtonStyle())
-
-                // bolinhas coloridas do lado direito, na mesma altura do 123
-                colorToggle
+            Button { tap(.input, "Fonte") } label: {
+                Image(systemName: "rectangle.on.rectangle")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 44, height: 40)
             }
+            .buttonStyle(BevelButtonStyle())
         }
     }
 
-    private var colorToggle: some View {
+    // MARK: - Roda, com 123 e voltar na altura das setas laterais
+
+    private var wheelWithSides: some View {
+        HStack(alignment: .center, spacing: 6) {
+            VStack {
+                Spacer(minLength: 0)
+                numberToggle
+                Spacer(minLength: 0)
+            }
+            .frame(height: wheelSide)
+
+            wheel
+
+            VStack {
+                Spacer(minLength: 0)
+                Button { tap(.back, "Voltar") } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .frame(width: 44, height: 34)
+                }
+                .buttonStyle(BevelButtonStyle(shape: AnyShape(RoundedRectangle(cornerRadius: 10, style: .continuous))))
+                .accessibilityLabel("Voltar")
+                Spacer(minLength: 0)
+            }
+            .frame(height: wheelSide)
+        }
+    }
+
+    private var numberToggle: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.15)) { showNumbers = false }
+            withAnimation(.easeInOut(duration: 0.15)) { showNumbers.toggle() }
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } label: {
-            HStack(spacing: 3) {
-                Circle().fill(Color(red: 0.85, green: 0.24, blue: 0.24)).frame(width: 5, height: 5)
-                Circle().fill(Color(red: 0.30, green: 0.65, blue: 0.33)).frame(width: 5, height: 5)
-                Circle().fill(Color(red: 0.90, green: 0.78, blue: 0.24)).frame(width: 5, height: 5)
-                Circle().fill(Color(red: 0.25, green: 0.45, blue: 0.82)).frame(width: 5, height: 5)
-            }
-            .frame(width: 58, height: 26)
+            Text(showNumbers ? "ABC" : "123")
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.88))
+                .frame(width: 44, height: 34)
         }
-        .buttonStyle(BevelButtonStyle(shape: AnyShape(Capsule()), glow: Color.white.opacity(0.18)))
-        .accessibilityLabel("Teclas coloridas")
+        .buttonStyle(BevelButtonStyle(shape: AnyShape(RoundedRectangle(cornerRadius: 10, style: .continuous)),
+                                      glow: Color.white.opacity(0.18)))
+        .accessibilityLabel("Teclado numerico")
     }
-
-    // MARK: - Roda direcional
 
     private var wheel: some View {
         ZStack {
@@ -206,27 +209,25 @@ struct RemotePad3D: View {
                         .blur(radius: 6)
                         .offset(y: 2)
                 )
-                .frame(width: 196, height: 196)
+                .frame(width: wheelSide, height: wheelSide)
 
             VStack {
                 wheelArrow("chevron.up", .up, "Cima")
                 Spacer(minLength: 0)
                 wheelArrow("chevron.down", .down, "Baixo")
             }
-            .padding(.vertical, 10)
-            .frame(height: 196)
+            .padding(.vertical, 8)
+            .frame(height: wheelSide)
 
             HStack {
                 wheelArrow("chevron.left", .left, "Esquerda")
                 Spacer(minLength: 0)
                 wheelArrow("chevron.right", .right, "Direita")
             }
-            .padding(.horizontal, 10)
-            .frame(width: 196)
+            .padding(.horizontal, 8)
+            .frame(width: wheelSide)
 
-            Button {
-                tap(.ok, "OK")
-            } label: {
+            Button { tap(.ok, "OK") } label: {
                 ZStack {
                     Circle()
                         .fill(
@@ -235,70 +236,64 @@ struct RemotePad3D: View {
                         )
                         .overlay(Circle().strokeBorder(Color.white.opacity(0.30), lineWidth: 1))
                     Text("OK")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.9))
                 }
-                .frame(width: 84, height: 84)
+                .frame(width: 78, height: 78)
                 .shadow(color: .black.opacity(0.55), radius: 5, x: 0, y: 4)
             }
             .buttonStyle(BevelButtonStyle(glow: Color.white.opacity(0.25)))
+            .accessibilityLabel("OK")
         }
-        .frame(height: 200)
+        .frame(height: wheelSide)
     }
 
     private func wheelArrow(_ symbol: String, _ cmd: Cmd, _ label: String) -> some View {
-        Button {
-            tap(cmd, label)
-        } label: {
+        Button { tap(cmd, label) } label: {
             Image(systemName: symbol)
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white.opacity(0.78))
-                .frame(width: 54, height: 54)
+                .frame(width: 52, height: 52)
         }
         .buttonStyle(BevelButtonStyle())
+        .accessibilityLabel(label)
     }
 
     // MARK: - Volume e canal
 
     private var rockers: some View {
-        HStack(spacing: 26) {
-            rocker(label: "VOL", up: .volUp, down: .volDown,
-                   upIcon: "plus", downIcon: "minus")
-            rocker(label: "CH", up: .chUp, down: .chDown,
-                   upIcon: "chevron.up", downIcon: "chevron.down")
+        HStack(spacing: 40) {
+            rocker(label: "VOL", up: .volUp, down: .volDown, upIcon: "plus", downIcon: "minus")
+            rocker(label: "CH", up: .chUp, down: .chDown, upIcon: "chevron.up", downIcon: "chevron.down")
         }
     }
 
     private func rocker(label: String, up: Cmd, down: Cmd,
                         upIcon: String, downIcon: String) -> some View {
         VStack(spacing: 0) {
-            Button {
-                tap(up, "\(label) +")
-            } label: {
+            Button { tap(up, "\(label) +") } label: {
                 Image(systemName: upIcon)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white.opacity(0.85))
-                    .frame(width: 46, height: 40)
+                    .frame(width: 46, height: 38)
             }
             .buttonStyle(BevelButtonStyle(shape: AnyShape(UnevenRoundedRectangle(
-                topLeadingRadius: 23, bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0, topTrailingRadius: 23)), glow: .clear))
+                topLeadingRadius: 22, bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0, topTrailingRadius: 22))))
+            .accessibilityLabel("\(label) mais")
 
-            Rectangle()
-                .fill(Color.black.opacity(0.55))
-                .frame(width: 46, height: 1)
+            Rectangle().fill(Color.black.opacity(0.55)).frame(width: 46, height: 1)
 
-            Button {
-                tap(down, "\(label) -")
-            } label: {
+            Button { tap(down, "\(label) -") } label: {
                 Image(systemName: downIcon)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white.opacity(0.85))
-                    .frame(width: 46, height: 40)
+                    .frame(width: 46, height: 38)
             }
             .buttonStyle(BevelButtonStyle(shape: AnyShape(UnevenRoundedRectangle(
-                topLeadingRadius: 0, bottomLeadingRadius: 23,
-                bottomTrailingRadius: 23, topTrailingRadius: 0)), glow: .clear))
+                topLeadingRadius: 0, bottomLeadingRadius: 22,
+                bottomTrailingRadius: 22, topTrailingRadius: 0))))
+            .accessibilityLabel("\(label) menos")
 
             Text(label)
                 .font(.system(size: 8, weight: .semibold))
@@ -310,8 +305,7 @@ struct RemotePad3D: View {
     // MARK: - Linha inferior
 
     private var bottomRow: some View {
-        HStack(spacing: 20) {
-            smallKey("arrow.uturn.backward", .back, "Voltar")
+        HStack(spacing: 22) {
             smallKey("house", .home, "Home")
             smallKey("playpause", .playPause, "Play/Pause")
             smallKey("speaker.slash", .mute, "Mudo")
@@ -319,8 +313,18 @@ struct RemotePad3D: View {
         }
     }
 
-    /// O painel mostra o que a TV informa de verdade (modelo, resolucao, rede,
-    /// modo desenvolvedor). Tocar e segurar ainda manda KEY_INFO para a TV.
+    private func smallKey(_ symbol: String, _ cmd: Cmd, _ label: String) -> some View {
+        Button { tap(cmd, label) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.white.opacity(0.82))
+                .frame(width: 48, height: 48)
+        }
+        .buttonStyle(BevelButtonStyle())
+        .accessibilityLabel(label)
+    }
+
+    /// O painel mostra o que a TV informa de verdade. Segurar manda KEY_INFO.
     private var infoKey: some View {
         Button {
             details = []
@@ -334,14 +338,12 @@ struct RemotePad3D: View {
             Image(systemName: "info.circle")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.white.opacity(0.82))
-                .frame(width: 46, height: 46)
+                .frame(width: 48, height: 48)
         }
         .buttonStyle(BevelButtonStyle())
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.7).onEnded { _ in
-                tap(.info, "Info na TV")
-            }
-        )
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.7).onEnded { _ in
+            tap(.info, "Info na TV")
+        })
         .accessibilityLabel("Informacoes da TV")
     }
 
@@ -373,108 +375,44 @@ struct RemotePad3D: View {
         .presentationDetents([.medium, .large])
     }
 
-    // MARK: - Teclado numerico (botao 123 do controle)
+    // MARK: - Teclado numerico
 
     private var numberPad: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             ForEach([[1, 2, 3], [4, 5, 6], [7, 8, 9]], id: \.self) { line in
-                HStack(spacing: 22) {
-                    ForEach(line, id: \.self) { digit in
-                        numberKey(digit)
-                    }
+                HStack(spacing: 18) {
+                    ForEach(line, id: \.self) { digit in numberKey(digit) }
                 }
             }
-            HStack(spacing: 22) {
+            HStack(spacing: 18) {
                 numKey("CH-", .chDown)
                 numberKey(0)
                 numKey("CH+", .chUp)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
     }
 
     private func numberKey(_ digit: Int) -> some View {
         let cmd = Cmd(rawValue: Cmd.num0.rawValue + Int32(digit)) ?? .num0
-        return Button {
-            tap(cmd, "\(digit)")
-        } label: {
+        return Button { tap(cmd, "\(digit)") } label: {
             Text("\(digit)")
-                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .font(.system(size: 17, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.92))
-                .frame(width: 54, height: 42)
+                .frame(width: 54, height: 38)
         }
-        .buttonStyle(BevelButtonStyle(shape: AnyShape(RoundedRectangle(cornerRadius: 12, style: .continuous))))
+        .buttonStyle(BevelButtonStyle(shape: AnyShape(RoundedRectangle(cornerRadius: 11, style: .continuous))))
+        .accessibilityLabel("Numero \(digit)")
     }
 
     private func numKey(_ label: String, _ cmd: Cmd) -> some View {
-        Button {
-            tap(cmd, label)
-        } label: {
+        Button { tap(cmd, label) } label: {
             Text(label)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
                 .foregroundStyle(.white.opacity(0.75))
-                .frame(width: 54, height: 42)
+                .frame(width: 54, height: 38)
         }
-        .buttonStyle(BevelButtonStyle(shape: AnyShape(RoundedRectangle(cornerRadius: 12, style: .continuous))))
-    }
-
-    private var numberToggle: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) { showNumbers.toggle() }
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        } label: {
-            Text(showNumbers ? "ABC" : "123")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 42, height: 26)
-        }
-        .buttonStyle(BevelButtonStyle(shape: AnyShape(Capsule()), glow: Color.white.opacity(0.20)))
-    }
-
-    private func smallKey(_ symbol: String, _ cmd: Cmd, _ label: String) -> some View {
-        Button {
-            tap(cmd, label)
-        } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(.white.opacity(0.82))
-                .frame(width: 46, height: 46)
-        }
-        .buttonStyle(BevelButtonStyle())
-    }
-
-    // MARK: - Teclas coloridas
-
-    private var colorRow: some View {
-        HStack(spacing: 18) {
-            colorKey(Color(red: 0.80, green: 0.19, blue: 0.20), .red, "Vermelho")
-            colorKey(Color(red: 0.28, green: 0.62, blue: 0.30), .green, "Verde")
-            colorKey(Color(red: 0.88, green: 0.74, blue: 0.20), .yellow, "Amarelo")
-            colorKey(Color(red: 0.20, green: 0.42, blue: 0.80), .blue, "Azul")
-        }
-    }
-
-    private func colorKey(_ color: Color, _ cmd: Cmd, _ label: String) -> some View {
-        Button {
-            tap(cmd, label)
-        } label: {
-            Circle()
-                .fill(
-                    LinearGradient(colors: [color.opacity(0.95), color.opacity(0.55)],
-                                   startPoint: .top, endPoint: .bottom)
-                )
-                .overlay(
-                    Circle().fill(
-                        LinearGradient(colors: [Color.white.opacity(0.45), .clear],
-                                       startPoint: .topLeading, endPoint: .center)
-                    )
-                )
-                .overlay(Circle().strokeBorder(Color.black.opacity(0.45), lineWidth: 1))
-                .frame(width: 30, height: 30)
-                .shadow(color: color.opacity(0.55), radius: 6, x: 0, y: 2)
-        }
-        .buttonStyle(PlainButtonStyle3D())
-        .accessibilityLabel(label)
+        .buttonStyle(BevelButtonStyle(shape: AnyShape(RoundedRectangle(cornerRadius: 11, style: .continuous))))
     }
 }
 
