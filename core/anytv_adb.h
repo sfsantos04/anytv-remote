@@ -39,6 +39,11 @@ typedef struct {
     uint32_t key_lid;
     uint32_t key_rid;
     int key_open;
+    /* segundo canal (video + controle) na MESMA conexao ADB: o adbd deste tipo
+     * de aparelho aceita uma conexao TCP so */
+    uint32_t ctl_lid;
+    uint32_t ctl_rid;
+    int ctl_active;
 } adb_conn;
 
 #define ADB_OK 0
@@ -94,6 +99,11 @@ int adb_stream_start(adb_conn *c, const char *command, int timeout_ms);
 int adb_stream_read(adb_conn *c, uint8_t *out, size_t outlen, int timeout_ms);
 /* Escreve no servico aberto por adb_stream_start_service (canal de controle). */
 int adb_stream_write(adb_conn *c, const uint8_t *data, size_t len);
+/* Segundo canal na mesma conexao (controle do scrcpy). */
+int adb_ctl_open(adb_conn *c, const char *service, int timeout_ms);
+int adb_ctl_write(adb_conn *c, const uint8_t *data, size_t len);
+/* wait_okay=0 escreve e segue (o transporte e drenado depois) */
+int adb_ctl_write_wait(adb_conn *c, const uint8_t *data, size_t len, int wait_okay);
 void adb_stream_stop(adb_conn *c);
 
 #endif

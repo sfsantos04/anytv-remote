@@ -589,6 +589,40 @@ int adb_stream_start_service(adb_conn *c, const char *service, int timeout_ms) {
     return ADB_OK;
 }
 
+int adb_ctl_open(adb_conn *c, const char *service, int timeout_ms) {
+    if (!c || c->fd < 0) return ADB_ERR_IO;
+    uint32_t lid = 0, rid = 0;
+    int rc = open_service(c, service, &lid, &rid, timeout_ms);
+    if (rc != ADB_OK) return rc;
+    c->ctl_lid = lid;
+    c->ctl_rid = rid;
+    c->ctl_active = 1;
+    return ADB_OK;
+}
+
+int adb_ctl_write_wait(adb_conn *c, const uint8_t *data, size_t len, int wait_okay) {
+    if (!c || c->fd < 0 || !c->ctl_active) return ADB_ERR_IO;
+    if (send_msg(c, A_WRTE, c->ctl_lid, c->ctl_rid, (uint8_t *)data, (uint32_t)len) != ADB_OK)
+        return ADB_ERR_IO;
+    if (!wait_okay) return ADB_OK;
+    static uint8_t sink[ADB_MAX_PAYLOAD + 16];
+    for (int i = 0; i < 32; i++) {
+        msg_hdr h;
+        int r = read_msg(c, &h, sink, ADB_MAX_PAYLOAD, 120);
+        if (r != ADB_OK) break;
+        if (h.cmd == A_OKAY && (h.a0 == c->ctl_lid || h.a0 == c->stream_lid)) return ADB_OK;
+        if (h.cmd == A_WRTE && h.a1 == c->ctl_lid)
+            send_msg(c, A_OKAY, c->ctl_lid, c->ctl_rid, NULL, 0);
+        else if (h.cmd == A_WRTE && h.a1 == c->stream_lid)   /* video: descarta e libera */
+            send_msg(c, A_OKAY, c->stream_lid, c->stream_rid, NULL, 0);
+    }
+    return ADB_OK;
+}
+
+int adb_ctl_write(adb_conn *c, const uint8_t *data, size_t len) {
+    return adb_ctl_write_wait(c, data, len, 1);
+}
+
 int adb_stream_write(adb_conn *c, const uint8_t *data, size_t len) {
     if (!c || c->fd < 0 || !c->stream_active) return ADB_ERR_IO;
     if (send_msg(c, A_WRTE, c->stream_lid, c->stream_rid, (uint8_t *)data, (uint32_t)len) != ADB_OK) {
@@ -760,11 +794,16 @@ int adb_push(adb_conn *c, const char *remote_path, const uint8_t *data, size_t l
     int rc = open_service(c, "sync:", &lid, &rid, timeout_ms);
     if (rc != ADB_OK) return rc;
 
+    /* adbd novo espera "caminho,modo"; o antigo so le o caminho. */
+    char spec[512];
+    int spec_len = snprintf(spec, sizeof(spec), "%s,33188", remote_path);
+    if (spec_len <= 0 || (size_t)spec_len >= sizeof(spec)) return ADB_ERR_PROTOCOL;
+
     uint8_t req[8];
     put_le32(req, 0x444e4553u); /* "SEND" */
-    put_le32(req + 4, (uint32_t)strlen(remote_path));
+    put_le32(req + 4, (uint32_t)spec_len);
     if (sync_send(c, lid, rid, req, 8) != ADB_OK) return ADB_ERR_IO;
-    if (sync_send(c, lid, rid, remote_path, (uint32_t)strlen(remote_path)) != ADB_OK) return ADB_ERR_IO;
+    if (sync_send(c, lid, rid, spec, (uint32_t)spec_len) != ADB_OK) return ADB_ERR_IO;
 
     static uint8_t chunk[64 * 1024 + 8];
     size_t off = 0;

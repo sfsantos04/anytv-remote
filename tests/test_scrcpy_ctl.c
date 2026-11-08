@@ -83,7 +83,7 @@ int main(int argc, char **argv) {
         "CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process /system/bin "
         "com.genymobile.scrcpy.Server 1.25 log_level=info max_size=1024 "
         "bit_rate=2000000 max_fps=15 lock_video_orientation=-1 tunnel_forward=true "
-        "send_frame_meta=true control=true display_id=0 show_touches=false "
+        "send_device_meta=true send_dummy_byte=true send_frame_meta=true control=true display_id=0 show_touches=false "
         "stay_awake=false >/data/local/tmp/scrcpy.log 2>&1 &";
     adb_shell(&c, cmd, out, sizeof(out), 4000);
     printf("servidor iniciado\n");
@@ -95,25 +95,29 @@ int main(int argc, char **argv) {
     struct timespec ts = {1, 500000000};
     nanosleep(&ts, NULL);
 
+    /* Com control=true o servidor aceita DUAS conexoes: video e controle. */
+
     if (adb_stream_start_service(&c, "localabstract:scrcpy", 8000) != ADB_OK) {
         printf("socket scrcpy falhou: %s\n", c.last_error_text);
     } else {
         uint8_t head[512];
         int n = 0;
         for (int i = 0; i < 6 && n < 68; i++) {   /* cabecalho do scrcpy: 68 bytes */
-            int r = adb_stream_read(&c, head + n, sizeof(head) - (size_t)n, 3000);
+            int r = adb_stream_read(&c, head + n, sizeof(head) - (size_t)n, 5000);
             printf("  leitura %d: %d bytes\n", i, r);
             if (r <= 0) break;
             n += r;
         }
         printf("scrcpy: %d bytes de cabecalho (%.40s)\n", n, (char *)head);
 
+        int ctl_ok = (adb_ctl_open(&c, "localabstract:scrcpy", 8000) == ADB_OK);
+        printf("canal de controle: %s\n", ctl_ok ? "aberto" : "falhou");
         uint8_t msg[14];
         double t0 = now_ms();
         key_msg(msg, 0, 3);              /* HOME down */
-        adb_stream_write(&c, msg, sizeof(msg));
+        adb_ctl_write(&c, msg, sizeof(msg));
         key_msg(msg, 1, 3);              /* HOME up */
-        adb_stream_write(&c, msg, sizeof(msg));
+        adb_ctl_write(&c, msg, sizeof(msg));
         double dt = now_ms() - t0;
         printf("envio de HOME: %.1f ms\n", dt);
 

@@ -230,6 +230,32 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Teclas rápidas pelo canal de controle do scrcpy (sem root).
+    /// Sobe o servidor uma vez; depois as teclas saem em ~20 ms.
+    @discardableResult
+    func startFastKeys() async -> Bool {
+        guard proto == .adb else { return false }
+        guard let url = Bundle.main.url(forResource: "scrcpy-server", withExtension: "jar"),
+              let jar = try? Data(contentsOf: url), jar.count > 1024 else {
+            Diagnostics.note("fastkeys: scrcpy-server.jar nao esta no pacote")
+            return false
+        }
+        let ok: Bool = (try? await run { [self] in
+            guard let handle else { return false }
+            let rc = jar.withUnsafeBytes { buffer -> Int32 in
+                guard let base = buffer.bindMemory(to: UInt8.self).baseAddress else { return -1 }
+                return anytv_client_fastkeys_start(handle, base, jar.count)
+            }
+            if rc != 0 {
+                Diagnostics.note("fastkeys indisponivel: \(String(cString: anytv_client_error(handle)))")
+                return false
+            }
+            return true
+        }) ?? false
+        Diagnostics.note(ok ? "fastkeys ativo (teclas pelo scrcpy)" : "fastkeys nao subiu")
+        return ok
+    }
+
     func text(_ value: String) async throws {
         try await run { [self] in
             guard let handle else { throw TVClientError.notConnected }

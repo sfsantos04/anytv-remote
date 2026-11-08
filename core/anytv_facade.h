@@ -75,6 +75,10 @@ int anytv_client_details(anytv_client *c, char *out, size_t outlen);
 int anytv_client_keepalive(anytv_client *c);
 /* 1 quando o aparelho permite injetar teclas por root (sendevent). */
 int anytv_client_probe_root(anytv_client *c, char *out, size_t outlen);
+/* Teclas rápidas pelo canal de controle do scrcpy (sem root). start sobe o
+ * servidor e abre video+controle; fastkey injeta um keycode do Android. */
+int anytv_client_fastkeys_start(anytv_client *c, const uint8_t *jar, size_t jar_len);
+int anytv_client_fastkey(anytv_client *c, int keycode, int repeat);
 int anytv_client_wake(anytv_client *c);
 int anytv_client_power_on(anytv_client *c);   /* Wake-on-LAN */
 int anytv_client_sleep(anytv_client *c);      /* power off / sleep */

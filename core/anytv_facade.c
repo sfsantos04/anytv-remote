@@ -284,6 +284,12 @@ static int adb_cmd(anytv_client *c, anytv_cmd cmd, int repeat) {
         size_t used = strlen(line);
         snprintf(line + used, sizeof(line) - used, " %d", ADB_CODES[cmd]);
     }
+    /* Canal de controle do scrcpy: injeta dentro do aparelho, sem subir
+     * processo por tecla. Se cair, volta para o caminho do ADB. */
+    if (c->conn.ctl_active) {
+        int fast = anytv_client_fastkey(c, ADB_CODES[cmd], times);
+        if (fast == ADB_OK) return 0;
+    }
     /* Caminho comprovado, com teto curto: se o aparelho travar, o comando
      * desiste em 2,5 s em vez de segurar a fila por 8 s. */
     return adb_run(c, line, 2500);
@@ -967,6 +973,122 @@ int anytv_client_probe_root(anytv_client *c, char *out, size_t outlen) {
     if (code < 0 || !strstr(tmp, "event")) return 0;
     if (out && outlen) snprintf(out, outlen, "%s", tmp);
     return 1;
+}
+
+/* ---- teclas rápidas pelo canal de controle do scrcpy (sem root) ---- */
+
+/* Garante o scrcpy-server no aparelho (envia se faltar). */
+static int j2_ok(anytv_client *c, const uint8_t *jar, size_t jar_len) {
+    const char *remote = "/data/local/tmp/scrcpy-server.jar";
+    char probe[512], cmd[256];
+    snprintf(cmd, sizeof(cmd), "ls -l %s 2>/dev/null", remote);
+    if (adb_shell(&c->conn, cmd, probe, sizeof(probe), 8000) < 0) probe[0] = 0;
+    if (strstr(probe, "scrcpy-server.jar")) return 1;
+    if (!jar || jar_len < 1024) {
+        snprintf(c->error, sizeof(c->error), "scrcpy-server ausente no aparelho");
+        return 0;
+    }
+    /* Envio por "cat" no shell: funciona onde o sync do adbd mudou de formato. */
+    char open_cmd[256];
+    snprintf(open_cmd, sizeof(open_cmd), "shell:cat > %s", remote);
+    if (adb_stream_start_service(&c->conn, open_cmd, 8000) != ADB_OK) {
+        snprintf(c->error, sizeof(c->error), "nao abriu o canal de envio");
+        return 0;
+    }
+    size_t off = 0;
+    while (off < jar_len) {
+        size_t n = jar_len - off;
+        if (n > 3000) n = 3000;
+        if (adb_stream_write(&c->conn, jar + off, n) != ADB_OK) break;
+        off += n;
+    }
+    adb_stream_stop(&c->conn);
+    if (off != jar_len) {
+        snprintf(c->error, sizeof(c->error), "envio do scrcpy-server incompleto (%zu de %zu)",
+                 off, jar_len);
+        return 0;
+    }
+    return 1;
+}
+
+static int fastkeys_ready(anytv_client *c) {
+    return c && c->proto == ANYTV_PROTO_ADB && c->connected &&
+           c->conn.ctl_active;
+}
+
+/* Sobe o servidor do scrcpy com controle e abre os dois canais na MESMA
+ * conexao ADB (o adbd destes aparelhos aceita uma conexao TCP por vez). */
+int anytv_client_fastkeys_start(anytv_client *c, const uint8_t *jar, size_t jar_len) {
+    if (!c || c->proto != ANYTV_PROTO_ADB || !c->connected) return ADB_ERR_IO;
+    char out[1024];
+    const char *remote = "/data/local/tmp/scrcpy-server.jar";
+
+    if (!j2_ok(c, jar, jar_len)) return ADB_ERR_IO;
+
+    adb_shell(&c->conn, "pkill -f com.genymobile.scrcpy 2>/dev/null; sleep 0.2",
+              out, sizeof(out), 5000);
+
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+             "CLASSPATH=%s app_process /system/bin com.genymobile.scrcpy.Server 1.25 "
+             "log_level=info max_size=256 bit_rate=200000 max_fps=1 tunnel_forward=true "
+             "send_device_meta=true send_dummy_byte=true send_frame_meta=true control=true "
+             "display_id=0 show_touches=false stay_awake=false "
+             "cleanup=false >/data/local/tmp/anytv-fastkeys.log 2>&1 &", remote);
+    adb_shell(&c->conn, cmd, out, sizeof(out), 8000);
+
+    int rc = ADB_ERR_SOCKET;
+    for (int i = 0; i < 14; i++) {
+        rc = adb_stream_start_service(&c->conn, "localabstract:scrcpy", 6000);
+        if (rc == ADB_OK) break;
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 300 * 1000 * 1000 };
+        nanosleep(&ts, NULL);
+    }
+    if (rc != ADB_OK) {
+        snprintf(c->error, sizeof(c->error), "servidor de teclas nao abriu (%d)", rc);
+        return rc;
+    }
+    /* descarta o cabecalho do video (1 byte + 64 + 4) sem esperar quadros */
+    uint8_t meta[80];
+    adb_stream_read(&c->conn, meta, sizeof(meta), 3000);
+
+    rc = adb_ctl_open(&c->conn, "localabstract:scrcpy", 6000);
+    if (rc != ADB_OK) {
+        adb_stream_stop(&c->conn);
+        snprintf(c->error, sizeof(c->error), "canal de controle nao abriu (%d)", rc);
+        return rc;
+    }
+    c->error[0] = 0;
+    return ADB_OK;
+}
+
+static void put_be32(uint8_t *p, uint32_t v) {
+    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)v;
+}
+
+/* Manda uma tecla pelo canal de controle (formato INJECT_KEYCODE do scrcpy). */
+int anytv_client_fastkey(anytv_client *c, int keycode, int repeat) {
+    if (!fastkeys_ready(c)) return ADB_ERR_IO;
+    uint8_t down[14] = {0}, up[14] = {0};
+    down[0] = 0; down[1] = 0;      /* INJECT_KEYCODE, ACTION_DOWN */
+    put_be32(down + 2, (uint32_t)keycode);
+    put_be32(down + 6, (uint32_t)(repeat > 0 ? repeat - 1 : 0));
+    up[0] = 0; up[1] = 1;          /* ACTION_UP */
+    put_be32(up + 2, (uint32_t)keycode);
+    uint8_t both[28];
+    memcpy(both, down, 14);
+    memcpy(both + 14, up, 14);
+    /* Sem esperar confirmacao: drena o transporte a cada 6 teclas para nao
+     * estourar a janela. E o que deixa o toque instantaneo. */
+    static int pending;
+    int wait = ((++pending % 6) == 0);
+    int rc = adb_ctl_write_wait(&c->conn, both, sizeof(both), wait);
+    if (rc != ADB_OK) {
+        c->conn.ctl_active = 0;
+        snprintf(c->error, sizeof(c->error), "canal de teclas caiu");
+    }
+    return rc;
 }
 
 /* Mantem a sessao viva: a TV derruba websocket ocioso e a reconexao seguinte

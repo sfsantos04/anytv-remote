@@ -253,6 +253,9 @@ struct RemoteView: View {
                 status += " Sem token salvo: a TV vai pedir Permitir agora."
             }
             if device.proto == .adb {
+                // teclas rápidas: sobe o canal de controle do scrcpy em segundo
+                // plano; se não subir, o envio continua pelo ADB normal
+                Task { await client.startFastKeys() }
                 if let probe = try? await client.shell("id; which su; ls /dev/input 2>/dev/null | head -8") {
                     Diagnostics.note("ADB probe: " + probe.replacingOccurrences(of: "\n", with: " | "))
                 }
