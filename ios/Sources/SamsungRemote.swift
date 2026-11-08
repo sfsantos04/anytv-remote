@@ -21,6 +21,8 @@ struct SamsungRemote: View {
     @State private var showScreen = false
     @State private var showDiag = false
     @State private var showNumbers = false
+    @State private var showText = false
+    @State private var typed = ""
 
     private func tap(_ cmd: Cmd, _ label: String) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -76,6 +78,7 @@ struct SamsungRemote: View {
         .sheet(isPresented: $showScreen) { ScreenSheet(client: client) }
         .sheet(isPresented: $showDiag) { DiagnosticsView() }
         .sheet(isPresented: $showNumbers) { numberSheet }
+        .sheet(isPresented: $showText) { textSheet }
     }
 
     // MARK: - Barra do alto
@@ -200,9 +203,11 @@ struct SamsungRemote: View {
     private var centerColumn: some View {
         VStack(spacing: 10) {
             Button {
+                // o microfone do teclado do iPhone faz o ditado; o texto vai
+                // para a TV pelo canal de texto do protocolo
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                status = "Voz"
-                showDiag = false
+                typed = ""
+                showText = true
             } label: {
                 Image(systemName: "mic")
                     .font(.system(size: 26, weight: .light))
@@ -366,6 +371,39 @@ struct SamsungRemote: View {
                 .padding(.horizontal, -8)
                 .offset(y: -10)
         }
+    }
+
+    // MARK: - Digitar / ditar
+
+    private var textSheet: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Digitar ou ditar").font(.headline)
+                Spacer()
+                Button("Fechar") { showText = false }
+            }
+            TextField("texto para a TV", text: $typed)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                .autocapitalization(.none)
+            HStack {
+                Spacer()
+                Button("Enviar para a TV") {
+                    let value = typed
+                    typed = ""
+                    showText = false
+                    Task { try? await client.text(value) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(typed.isEmpty)
+            }
+            Text("Toque no microfone do teclado para ditar em vez de digitar.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+        .presentationDetents([.height(260)])
     }
 
     // MARK: - Teclado numérico
