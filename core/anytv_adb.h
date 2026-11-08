@@ -92,6 +92,8 @@ int adb_stream_start_service(adb_conn *c, const char *service, int timeout_ms);
  * or a negative ADB_ERR_*. stop closes the stream (the child dies with it). */
 int adb_stream_start(adb_conn *c, const char *command, int timeout_ms);
 int adb_stream_read(adb_conn *c, uint8_t *out, size_t outlen, int timeout_ms);
+/* Escreve no servico aberto por adb_stream_start_service (canal de controle). */
+int adb_stream_write(adb_conn *c, const uint8_t *data, size_t len);
 void adb_stream_stop(adb_conn *c);
 
 #endif

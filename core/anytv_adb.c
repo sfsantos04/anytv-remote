@@ -589,6 +589,30 @@ int adb_stream_start_service(adb_conn *c, const char *service, int timeout_ms) {
     return ADB_OK;
 }
 
+int adb_stream_write(adb_conn *c, const uint8_t *data, size_t len) {
+    if (!c || c->fd < 0 || !c->stream_active) return ADB_ERR_IO;
+    if (send_msg(c, A_WRTE, c->stream_lid, c->stream_rid, (uint8_t *)data, (uint32_t)len) != ADB_OK) {
+        set_err(c, ADB_ERR_IO, "write no canal falhou");
+        return ADB_ERR_IO;
+    }
+    /* Consome o OKAY da janela do transporte; sem isso, escritas grandes param
+     * depois do primeiro buffer. Saida que chegar nesse meio-tempo e descartada. */
+    static uint8_t sink[ADB_MAX_PAYLOAD + 16];
+    for (int i = 0; i < 64; i++) {
+        msg_hdr h;
+        int r = read_msg(c, &h, sink, ADB_MAX_PAYLOAD, 200);
+        if (r != ADB_OK) break;
+        if (h.cmd == A_OKAY) return ADB_OK;
+        if (h.cmd == A_WRTE && h.a1 == c->stream_lid) {
+            send_msg(c, A_OKAY, c->stream_lid, c->stream_rid, NULL, 0);
+        } else if (h.cmd == A_CLSE && h.a1 == c->stream_lid) {
+            c->stream_active = 0;
+            return ADB_ERR_IO;
+        }
+    }
+    return ADB_OK;
+}
+
 int adb_stream_read(adb_conn *c, uint8_t *out, size_t outlen, int timeout_ms) {
     static uint8_t payload[ADB_MAX_PAYLOAD + 16];
     if (!c->stream_active || !out || !outlen) return 0;
