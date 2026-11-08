@@ -66,10 +66,21 @@ struct DiagnosticsView: View {
                     Button("Fechar") { dismiss() }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Limpar") { Diagnostics.clear(); text = Diagnostics.contents() }
+                    Button("Limpar") {
+                        Diagnostics.clear()
+                        CrashReporter.clear()
+                        text = Diagnostics.contents()
+                    }
                 }
             }
-            .task { text = Diagnostics.contents() }
+            .task {
+                var all = Diagnostics.contents()
+                let crash = CrashReporter.read()
+                if !crash.isEmpty {
+                    all = "=== QUEDAS REGISTRADAS ===\n" + crash + "\n=== LOG ===\n" + all
+                }
+                text = all
+            }
         }
     }
 }

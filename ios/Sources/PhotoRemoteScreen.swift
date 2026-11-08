@@ -9,6 +9,9 @@ struct PhotoRemoteScreen: View {
     let proto: TVProto
     var canApps: Bool
     var canScreen: Bool
+    var connected: Bool
+    var status: String
+    var onRetry: () -> Void
     var onClose: () -> Void
 
     @State private var status = ""
@@ -74,6 +77,26 @@ struct PhotoRemoteScreen: View {
 
                 Spacer(minLength: 0)
 
+                // indicador de conexão: verde conectado, laranja conectando,
+                // vermelho sem conexão. Tocar tenta de novo.
+                Button { onRetry() } label: {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(connected ? Color.green : (status.lowercased().contains("conect") ? Color.orange : Color.red))
+                            .frame(width: 7, height: 7)
+                        Text(connected ? "Conectado" : (status.isEmpty ? "Sem conexão" : status))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.black.opacity(0.32)))
+                }
+                .accessibilityLabel("Estado da conexão")
+
+                Spacer(minLength: 0)
+
                 Menu {
                     if canApps { Button("Aplicativos") { showApps = true } }
                     if canScreen { Button("Espelhar tela") { showScreen = true } }
@@ -94,6 +117,22 @@ struct PhotoRemoteScreen: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 8)
+        }
+        .overlay {
+            if !connected {
+                VStack(spacing: 10) {
+                    Text("Sem conexão").font(.headline)
+                    Text(status.isEmpty ? "Tocando em Conectar o app tenta de novo." : status)
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                    Button("Conectar") { onRetry() }
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding(20)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                .padding(.horizontal, 40)
+            }
         }
         .statusBarHidden(false)
         .sheet(isPresented: $showApps) {

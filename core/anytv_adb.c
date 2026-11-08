@@ -481,6 +481,13 @@ static int drain_stream(adb_conn *c, uint32_t lid, uint32_t rid, char *out, size
 
 /* Legacy (non shell_v2) framing carries raw bytes. */
 int adb_shell(adb_conn *c, const char *command, char *out, size_t outlen, int timeout_ms) {
+    /* socket morto nao pode virar comando: era o caminho do fechamento do app
+     * quando o adbd do aparelho travava no meio do uso */
+    if (!c || c->fd < 0) {
+        if (c) set_err(c, ADB_ERR_IO, "conexao ADB caiu");
+        if (out && outlen) out[0] = 0;
+        return ADB_ERR_IO;
+    }
     char service[1024];
     snprintf(service, sizeof(service), "shell,v2,raw:%s", command);
     int exit_code = 0;

@@ -141,6 +141,10 @@ struct ScreenSheet: View {
                     } catch {
                         useScrcpy = false
                         message = "scrcpy falhou (\(error.localizedDescription)); usando o encoder do sistema"
+                        if error.localizedDescription.lowercased().contains("caiu")
+                            || error.localizedDescription.lowercased().contains("nao conectado") {
+                            message = "O ADB do aparelho caiu. Desligue e ligue a depuração (ou reinicie o aparelho) e tente de novo."
+                        }
                         Diagnostics.note("scrcpy falhou: \(error.localizedDescription)")
                     }
                 }

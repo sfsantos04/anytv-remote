@@ -73,6 +73,9 @@ struct RemoteView: View {
                               proto: device.proto,
                               canApps: appsAvailable || client.supports(Cap.apps),
                               canScreen: client.supports(Cap.screen),
+                              connected: connected,
+                              status: status,
+                              onRetry: { Task { await connect() } },
                               onClose: { dismiss() })
         } else {
         ScrollView {
