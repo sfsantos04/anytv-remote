@@ -27,7 +27,7 @@ struct RemoteView: View {
         .onChange(of: showKeyboard) { _ in typing = true }
         .navigationTitle(device.label)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(device.proto == .tizen ? .hidden : .visible, for: .navigationBar)
+        .toolbar((device.proto == .tizen || device.proto == .adb) ? .hidden : .visible, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 if appsAvailable || client.supports(Cap.apps) {
@@ -68,22 +68,18 @@ struct RemoteView: View {
     /// Samsung usa a tela cheia clara; os outros protocolos seguem na lista.
     @ViewBuilder
     private var content: some View {
-        if device.proto == .tizen {
-            SamsungRemote(client: client,
-                          title: info.isEmpty ? "Samsung" : info,
-                          canApps: appsAvailable || client.supports(Cap.apps),
-                          canScreen: client.supports(Cap.screen),
-                          onClose: { dismiss() })
+        if device.proto == .tizen || device.proto == .adb {
+            PhotoRemoteScreen(client: client,
+                              proto: device.proto,
+                              canApps: appsAvailable || client.supports(Cap.apps),
+                              canScreen: client.supports(Cap.screen),
+                              onClose: { dismiss() })
         } else {
         ScrollView {
             VStack(spacing: 14) {
                 header
                 statusBar
-                if device.proto == .adb {
-                    // formato do controle do TCL/Android TV
-                    AndroidPad(client: client, title: info.isEmpty ? "Android" : info,
-                               wantKeyboard: $showKeyboard)
-                        .padding(.top, 6)
+                if false {
                 } else {
                     dpad
                     controlRow([("VOL-", .volDown), ("MUTE", .mute), ("VOL+", .volUp)])

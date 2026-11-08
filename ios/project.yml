@@ -28,6 +28,8 @@ targets:
         buildPhase: resources
       - path: Resources/icons
         buildPhase: resources
+      - path: Resources/remotes
+        buildPhase: resources
     settings:
       base:
         INFOPLIST_FILE: Resources/Info.plist
