@@ -21,6 +21,7 @@ struct PhotoRemoteScreen: View {
     @State private var showExtra = false
     @State private var showText = false
     @State private var showMouse = false
+    @State private var latency = 0
     @State private var typed = ""
 
     @State private var wantKeyboard = false
@@ -60,7 +61,10 @@ struct PhotoRemoteScreen: View {
                         imageSize: art.size,
                         keys: art.keys,
                         special: handleSpecial) { cmd, _ in
-                Task { try? await client.send(cmd) }
+                Task {
+                    try? await client.send(cmd)
+                    latency = client.lastCommandMS
+                }
             }
 
             // fechar e menu, discretos, sobre a imagem
@@ -81,9 +85,10 @@ struct PhotoRemoteScreen: View {
                 Button { onRetry() } label: {
                     HStack(spacing: 5) {
                         Circle()
-                            .fill(connected ? Color.green : (connectionStatus.lowercased().contains("conect") ? Color.orange : Color.red))
+                            .fill(!connected ? (connectionStatus.lowercased().contains("conect") ? Color.orange : Color.red)
+                                  : (latency > 900 ? Color.orange : Color.green))
                             .frame(width: 7, height: 7)
-                        Text(connected ? "Conectado" : (connectionStatus.isEmpty ? "Sem conexão" : connectionStatus))
+                        Text(pillText)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.85))
                             .lineLimit(1)
@@ -146,6 +151,14 @@ struct PhotoRemoteScreen: View {
         .sheet(isPresented: $showMouse) {
             MousePad(client: client, onClose: { showMouse = false })
         }
+    }
+
+    private var pillText: String {
+        if !connected {
+            return connectionStatus.isEmpty ? "Sem conexão" : connectionStatus
+        }
+        if latency > 900 { return "Lento: \(latency) ms" }
+        return "Conectado"
     }
 
     // MARK: - Teclas que não são comando direto

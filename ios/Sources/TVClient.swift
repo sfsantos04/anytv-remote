@@ -183,7 +183,17 @@ final class TVClient: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Tempo do último comando, para o app mostrar quando o aparelho está lento.
+    private(set) var lastCommandMS: Int = 0
+
     func send(_ cmd: Cmd, repeat count: Int = 1) async throws {
+        let t0 = Date()
+        defer {
+            lastCommandMS = Int(Date().timeIntervalSince(t0) * 1000)
+            if lastCommandMS > 900 {
+                Diagnostics.note("comando lento: \(lastCommandMS)ms (cmd \(cmd.rawValue))")
+            }
+        }
         Diagnostics.note("send cmd=\(cmd.rawValue) proto=\(proto.rawValue)")
         defer { Diagnostics.note("send fim") }
         try await run { [self] in
