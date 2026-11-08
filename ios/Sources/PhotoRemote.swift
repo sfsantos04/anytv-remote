@@ -19,6 +19,15 @@ struct PhotoRemote: View {
     /// nil quando a tecla é especial (123, EXTRA, teclado, ajustes...).
     var special: (String) -> Void = { _ in }
     let onCommand: (Cmd, String) -> Void
+    var onRepeat: (Cmd, String) -> Void = { _, _ in }
+
+    /// Teclas que repetem ao segurar (direcional, volume e canais).
+    private let holds: [String: Int] = [
+        "up": 3, "down": 3, "left": 3, "right": 3,
+        "vol+": 3, "vol-": 3, "ch+": 3, "ch-": 3,
+        "cima": 3, "baixo": 3, "esquerda": 3, "direita": 3,
+        "volUp": 3, "volDown": 3
+    ]
 
     var body: some View {
         GeometryReader { geo in
@@ -44,7 +53,11 @@ struct PhotoRemote: View {
                     let x = origin.x + k.box.minX * scale
                     let y = origin.y + k.box.minY * scale
 
-                    PressZone(id: k.id, width: w, height: h, corner: min(w, h) * k.corner) {
+                    PressZone(id: k.id, width: w, height: h, corner: min(w, h) * k.corner,
+                              holdRepeat: holds[k.id] ?? 1,
+                              repeatHold: {
+                                  if let cmd = k.cmd { onRepeat(cmd, k.id) }
+                              }) {
                         if let cmd = k.cmd {
                             onCommand(cmd, k.id)
                         } else {
@@ -173,10 +186,14 @@ struct PressZone: View {
     let width: CGFloat
     let height: CGFloat
     let corner: CGFloat
+    /// Quantas teclas mandar quando o dedo fica apoiado (1 = sem repetição).
+    var holdRepeat: Int = 1
+    var repeatHold: (() -> Void)? = nil
     let action: () -> Void
 
     @GestureState private var down = false
     @State private var fired = false
+    @State private var holdTask: Task<Void, Never>?
 
     var body: some View {
         RoundedRectangle(cornerRadius: corner, style: .continuous)
@@ -201,8 +218,21 @@ struct PressZone: View {
                         fired = true
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         action()
+                        guard holdRepeat > 1 else { return }
+                        // segurou: depois de 450 ms o próprio aparelho repete,
+                        // numa chamada só, sem empilhar comandos
+                        holdTask = Task {
+                            try? await Task.sleep(nanoseconds: 450_000_000)
+                            guard !Task.isCancelled else { return }
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            repeatHold?()
+                        }
                     }
-                    .onEnded { _ in fired = false }
+                    .onEnded { _ in
+                        fired = false
+                        holdTask?.cancel()
+                        holdTask = nil
+                    }
             )
             .animation(.easeOut(duration: 0.08), value: down)
     }

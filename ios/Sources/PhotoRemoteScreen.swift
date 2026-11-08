@@ -60,13 +60,17 @@ struct PhotoRemoteScreen: View {
             PhotoRemote(imageName: art.name,
                         imageSize: art.size,
                         keys: art.keys,
-                        special: handleSpecial) { cmd, _ in
-                client.sendKey(cmd)
-                Task {
-                    try? await Task.sleep(nanoseconds: 250_000_000)
-                    latency = client.lastCommandMS
-                }
-            }
+                        special: handleSpecial,
+                        onCommand: { cmd, _ in
+                            client.sendKey(cmd)
+                            Task {
+                                try? await Task.sleep(nanoseconds: 250_000_000)
+                                latency = client.lastCommandMS
+                            }
+                        },
+                        onRepeat: { cmd, _ in
+                            client.sendKey(cmd, repeat: 3)
+                        })
 
             // fechar e menu, discretos, sobre a imagem
             HStack {
