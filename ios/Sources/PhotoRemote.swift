@@ -22,11 +22,14 @@ struct PhotoRemote: View {
 
     var body: some View {
         GeometryReader { geo in
-            let scale = max(geo.size.width / imageSize.width,
-                            geo.size.height / imageSize.height)
+            let topInset = geo.safeAreaInsets.top
+            let usable = CGSize(width: geo.size.width,
+                                height: geo.size.height - topInset - geo.safeAreaInsets.bottom)
+            let scale = min(usable.width / imageSize.width,
+                            usable.height / imageSize.height)
             let drawn = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
             let origin = CGPoint(x: (geo.size.width - drawn.width) / 2,
-                                 y: (geo.size.height - drawn.height) / 2)
+                                 y: topInset + (usable.height - drawn.height) / 2)
 
             ZStack(alignment: .topLeading) {
                 RemoteArt.image(named: imageName)
@@ -53,15 +56,15 @@ struct PhotoRemote: View {
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
-            .clipped()
+            .background(Color.black)
         }
-        .ignoresSafeArea()
     }
 }
 
 enum RemoteArt {
-    static let base = CGSize(width: 1280, height: 2660)      // render da Samsung
-    static let androidBase = CGSize(width: 980, height: 2580) // Android recortado
+    static let base = CGSize(width: 1220, height: 2520)      // Samsung recortada
+    static let samsungCrop = CGPoint(x: 30, y: 40)
+    static let androidBase = CGSize(width: 980, height: 1760) // Android recortado
     static let androidCrop = CGPoint(x: 150, y: 40)
 
     /// Carrega a imagem do controle direto do bundle, com fallback pelo caminho
@@ -90,33 +93,38 @@ enum RemoteArt {
     }
 
     /// Camadas de toque da Samsung, em coordenadas da imagem 1280×2660.
-    static let samsung: [HotKey] = {
+    static let samsung: [HotKey] = samsungRaw.map { k in
+        HotKey(id: k.id, box: k.box.offsetBy(dx: -samsungCrop.x, dy: -samsungCrop.y),
+               corner: k.corner, cmd: k.cmd)
+    }
+
+    private static let samsungRaw: [HotKey] = {
         // centros e raios saíram do mesmo desenho que gerou a imagem
         func box(_ cx: CGFloat, _ cy: CGFloat, _ r: CGFloat) -> CGRect {
             CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r)
         }
         var keys: [HotKey] = [
-            HotKey(id: "power", box: box(252, 424, 116), cmd: .power),
-            HotKey(id: "123", box: box(252, 806, 128)),
-            HotKey(id: "extra", box: box(1280 - 252, 806, 128)),
+            HotKey(id: "power", box: box(252, 430, 136), cmd: .power),
+            HotKey(id: "123", box: box(252, 840, 166)),
+            HotKey(id: "extra", box: box(1280 - 252, 840, 166)),
             // roda: 4 bordas + OK
-            HotKey(id: "up", box: box(640, 1412 - 236, 104), corner: 0.5, cmd: .up),
-            HotKey(id: "down", box: box(640, 1412 + 236, 104), corner: 0.5, cmd: .down),
-            HotKey(id: "left", box: box(640 - 236, 1412, 104), corner: 0.5, cmd: .left),
-            HotKey(id: "right", box: box(640 + 236, 1412, 104), corner: 0.5, cmd: .right),
-            HotKey(id: "ok", box: box(640, 1412, 158), corner: 0.5, cmd: .ok),
+            HotKey(id: "up", box: box(640, 1470 - 262, 112), corner: 0.5, cmd: .up),
+            HotKey(id: "down", box: box(640, 1470 + 262, 112), corner: 0.5, cmd: .down),
+            HotKey(id: "left", box: box(640 - 262, 1470, 112), corner: 0.5, cmd: .left),
+            HotKey(id: "right", box: box(640 + 262, 1470, 112), corner: 0.5, cmd: .right),
+            HotKey(id: "ok", box: box(640, 1470, 186), corner: 0.5, cmd: .ok),
             // três teclas redondas
-            HotKey(id: "voltar", box: box(252, 1992, 112), corner: 0.5, cmd: .back),
-            HotKey(id: "home", box: box(640, 1992, 120), corner: 0.5, cmd: .home),
-            HotKey(id: "play", box: box(1280 - 252, 1992, 112), corner: 0.5, cmd: .playPause),
+            HotKey(id: "voltar", box: box(252, 2064, 138), corner: 0.5, cmd: .back),
+            HotKey(id: "home", box: box(640, 2064, 148), corner: 0.5, cmd: .home),
+            HotKey(id: "play", box: box(1280 - 252, 2064, 138), corner: 0.5, cmd: .playPause),
             // balancins: metade de cima aumenta, de baixo diminui
-            HotKey(id: "vol+", box: CGRect(x: 252 - 76, y: 2150, width: 152, height: 143),
+            HotKey(id: "vol+", box: CGRect(x: 252 - 93, y: 2148, width: 186, height: 145),
                    corner: 0.45, cmd: .volUp),
-            HotKey(id: "vol-", box: CGRect(x: 252 - 76, y: 2293, width: 152, height: 143),
+            HotKey(id: "vol-", box: CGRect(x: 252 - 93, y: 2293, width: 186, height: 145),
                    corner: 0.45, cmd: .volDown),
-            HotKey(id: "ch+", box: CGRect(x: 1280 - 252 - 76, y: 2150, width: 152, height: 143),
+            HotKey(id: "ch+", box: CGRect(x: 1280 - 252 - 93, y: 2148, width: 186, height: 145),
                    corner: 0.45, cmd: .chUp),
-            HotKey(id: "ch-", box: CGRect(x: 1280 - 252 - 76, y: 2293, width: 152, height: 143),
+            HotKey(id: "ch-", box: CGRect(x: 1280 - 252 - 93, y: 2293, width: 186, height: 145),
                    corner: 0.45, cmd: .chDown)
         ]
         keys.append(contentsOf: [])

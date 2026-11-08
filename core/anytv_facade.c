@@ -283,6 +283,22 @@ static int adb_cmd(anytv_client *c, anytv_cmd cmd) {
 int anytv_client_cmd(anytv_client *c, int cmd, int repeat) {
     if (!c) return ADB_ERR_PROTOCOL;
     if (cmd < 0 || cmd >= (int)ANYTV_CMD_COUNT) return ADB_ERR_PROTOCOL;
+    /* Sessao morta nao pode virar comando: era por aqui que o app caia quando
+     * o adbd do aparelho travava no meio do uso. */
+    if (!c->connected) {
+        snprintf(c->error, sizeof(c->error), "nao conectado");
+        return ADB_ERR_IO;
+    }
+    if (c->proto == ANYTV_PROTO_ADB && c->conn.fd < 0) {
+        c->connected = 0;
+        snprintf(c->error, sizeof(c->error), "conexao ADB caiu");
+        return ADB_ERR_IO;
+    }
+    if ((c->proto == ANYTV_PROTO_TIZEN || c->proto == ANYTV_PROTO_WEBOS) && c->ctx.ws.fd < 0) {
+        c->connected = 0;
+        snprintf(c->error, sizeof(c->error), "sessao da TV caiu");
+        return ADB_ERR_IO;
+    }
     int times = repeat < 1 ? 1 : repeat;
     int rc = ADB_ERR_IO;
     switch (c->proto) {
