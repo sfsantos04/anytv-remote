@@ -20,6 +20,7 @@ struct PhotoRemoteScreen: View {
     @State private var showNumbers = false
     @State private var showExtra = false
     @State private var showText = false
+    @State private var showMouse = false
     @State private var typed = ""
 
     @State private var wantKeyboard = false
@@ -101,6 +102,7 @@ struct PhotoRemoteScreen: View {
                     if proto == .tizen || proto == .adb {
                         Button("Teclas extras") { showExtra = true }
                     }
+                    Button("Touchpad (mouse)") { showMouse = true }
                     Button("Digitar na TV") { typed = ""; showText = true }
                     Button("Diagnóstico") { showDiag = true }
                 } label: {
@@ -141,6 +143,9 @@ struct PhotoRemoteScreen: View {
         .sheet(isPresented: $showNumbers) { numberSheet }
         .sheet(isPresented: $showExtra) { extraSheet }
         .sheet(isPresented: $showText) { textSheet }
+        .sheet(isPresented: $showMouse) {
+            MousePad(client: client, onClose: { showMouse = false })
+        }
     }
 
     // MARK: - Teclas que não são comando direto
