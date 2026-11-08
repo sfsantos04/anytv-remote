@@ -104,9 +104,9 @@ enum RemoteArt {
             CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r)
         }
         var keys: [HotKey] = [
-            HotKey(id: "power", box: box(252, 430, 136), cmd: .power),
-            HotKey(id: "123", box: box(252, 840, 166)),
-            HotKey(id: "extra", box: box(1280 - 252, 840, 166)),
+            HotKey(id: "power", box: box(252, 430, 144), cmd: .power),
+            HotKey(id: "123", box: box(252, 856, 144)),
+            HotKey(id: "extra", box: box(1280 - 252, 856, 144)),
             // roda: 4 bordas + OK
             HotKey(id: "up", box: box(640, 1470 - 262, 112), corner: 0.5, cmd: .up),
             HotKey(id: "down", box: box(640, 1470 + 262, 112), corner: 0.5, cmd: .down),
@@ -114,17 +114,17 @@ enum RemoteArt {
             HotKey(id: "right", box: box(640 + 262, 1470, 112), corner: 0.5, cmd: .right),
             HotKey(id: "ok", box: box(640, 1470, 186), corner: 0.5, cmd: .ok),
             // três teclas redondas
-            HotKey(id: "voltar", box: box(252, 2064, 138), corner: 0.5, cmd: .back),
-            HotKey(id: "home", box: box(640, 2064, 148), corner: 0.5, cmd: .home),
-            HotKey(id: "play", box: box(1280 - 252, 2064, 138), corner: 0.5, cmd: .playPause),
+            HotKey(id: "voltar", box: box(252, 2000, 138), corner: 0.5, cmd: .back),
+            HotKey(id: "home", box: box(640, 2000, 148), corner: 0.5, cmd: .home),
+            HotKey(id: "play", box: box(1280 - 252, 2000, 138), corner: 0.5, cmd: .playPause),
             // balancins: metade de cima aumenta, de baixo diminui
-            HotKey(id: "vol+", box: CGRect(x: 252 - 93, y: 2148, width: 186, height: 145),
+            HotKey(id: "vol+", box: CGRect(x: 252 - 93, y: 2182, width: 186, height: 145),
                    corner: 0.45, cmd: .volUp),
-            HotKey(id: "vol-", box: CGRect(x: 252 - 93, y: 2293, width: 186, height: 145),
+            HotKey(id: "vol-", box: CGRect(x: 252 - 93, y: 2327, width: 186, height: 145),
                    corner: 0.45, cmd: .volDown),
-            HotKey(id: "ch+", box: CGRect(x: 1280 - 252 - 93, y: 2148, width: 186, height: 145),
+            HotKey(id: "ch+", box: CGRect(x: 1280 - 252 - 93, y: 2182, width: 186, height: 145),
                    corner: 0.45, cmd: .chUp),
-            HotKey(id: "ch-", box: CGRect(x: 1280 - 252 - 93, y: 2293, width: 186, height: 145),
+            HotKey(id: "ch-", box: CGRect(x: 1280 - 252 - 93, y: 2327, width: 186, height: 145),
                    corner: 0.45, cmd: .chDown)
         ]
         keys.append(contentsOf: [])
