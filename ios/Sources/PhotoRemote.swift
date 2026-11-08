@@ -104,30 +104,30 @@ enum RemoteArt {
             CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r)
         }
         var keys: [HotKey] = [
-            HotKey(id: "power", box: box(252, 430, 144), cmd: .power),
-            HotKey(id: "123", box: box(252, 856, 144)),
-            HotKey(id: "extra", box: box(1280 - 252, 856, 144)),
+            HotKey(id: "power", box: box(252, 420, 144), cmd: .power),
+            HotKey(id: "123", box: box(252, 860, 154)),
+            HotKey(id: "extra", box: box(1280 - 252, 860, 154)),
             // roda: 4 bordas + OK
-            HotKey(id: "up", box: box(640, 1470 - 262, 112), corner: 0.5, cmd: .up),
-            HotKey(id: "down", box: box(640, 1470 + 262, 112), corner: 0.5, cmd: .down),
-            HotKey(id: "left", box: box(640 - 262, 1470, 112), corner: 0.5, cmd: .left),
-            HotKey(id: "right", box: box(640 + 262, 1470, 112), corner: 0.5, cmd: .right),
-            HotKey(id: "ok", box: box(640, 1470, 186), corner: 0.5, cmd: .ok),
+            HotKey(id: "up", box: box(640, 1460 - 226, 112), corner: 0.5, cmd: .up),
+            HotKey(id: "down", box: box(640, 1460 + 226, 112), corner: 0.5, cmd: .down),
+            HotKey(id: "left", box: box(640 - 226, 1460, 112), corner: 0.5, cmd: .left),
+            HotKey(id: "right", box: box(640 + 226, 1460, 112), corner: 0.5, cmd: .right),
+            HotKey(id: "ok", box: box(640, 1460, 168), corner: 0.5, cmd: .ok),
             // três teclas redondas
-            HotKey(id: "voltar", box: box(252, 2000, 138), corner: 0.5, cmd: .back),
-            HotKey(id: "home", box: box(640, 2000, 148), corner: 0.5, cmd: .home),
-            HotKey(id: "play", box: box(1280 - 252, 2000, 138), corner: 0.5, cmd: .playPause),
+            HotKey(id: "voltar", box: box(252, 2012, 136), corner: 0.5, cmd: .back),
+            HotKey(id: "home", box: box(640, 2012, 144), corner: 0.5, cmd: .home),
+            HotKey(id: "play", box: box(1280 - 252, 2012, 136), corner: 0.5, cmd: .playPause),
             // balancins: metade de cima aumenta, de baixo diminui
-            HotKey(id: "vol+", box: CGRect(x: 252 - 93, y: 2182, width: 186, height: 145),
+            HotKey(id: "vol+", box: CGRect(x: 252 - 90, y: 2196, width: 180, height: 130),
                    corner: 0.45, cmd: .volUp),
-            HotKey(id: "vol-", box: CGRect(x: 252 - 93, y: 2327, width: 186, height: 145),
+            HotKey(id: "vol-", box: CGRect(x: 252 - 90, y: 2326, width: 180, height: 130),
                    corner: 0.45, cmd: .volDown),
-            HotKey(id: "ch+", box: CGRect(x: 1280 - 252 - 93, y: 2182, width: 186, height: 145),
+            HotKey(id: "ch+", box: CGRect(x: 1280 - 252 - 90, y: 2196, width: 180, height: 130),
                    corner: 0.45, cmd: .chUp),
-            HotKey(id: "ch-", box: CGRect(x: 1280 - 252 - 93, y: 2327, width: 186, height: 145),
+            HotKey(id: "ch-", box: CGRect(x: 1280 - 252 - 90, y: 2326, width: 180, height: 130),
                    corner: 0.45, cmd: .chDown),
             // mudo no vão entre os balancins
-            HotKey(id: "mudo", box: box(640, 2330, 104), corner: 0.5, cmd: .mute)
+            HotKey(id: "mudo", box: box(640, 2326, 92), corner: 0.5, cmd: .mute)
         ]
         keys.append(contentsOf: [])
         return keys
@@ -161,8 +161,8 @@ enum RemoteArt {
         HotKey(id: "ch+", box: CGRect(x: 850, y: 1100, width: 160, height: 130), cmd: .chUp),
         HotKey(id: "ch-", box: CGRect(x: 850, y: 1316, width: 160, height: 130), cmd: .chDown),
         HotKey(id: "teclado", box: CGRect(x: 270, y: 1318, width: 160, height: 140)),
-        HotKey(id: "netflix", box: CGRect(x: 270, y: 1600, width: 370, height: 120)),
-        HotKey(id: "globoplay", box: CGRect(x: 640, y: 1600, width: 370, height: 120))
+        HotKey(id: "netflix", box: CGRect(x: 270, y: 1600, width: 358, height: 124)),
+        HotKey(id: "globoplay", box: CGRect(x: 644, y: 1600, width: 366, height: 124))
     ]
 }
 

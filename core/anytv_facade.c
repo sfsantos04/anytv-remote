@@ -266,7 +266,7 @@ static int adb_run(anytv_client *c, const char *cmd, int timeout_ms) {
     return code < 0 ? code : 0;
 }
 
-static int adb_cmd(anytv_client *c, anytv_cmd cmd) {
+static int adb_cmd(anytv_client *c, anytv_cmd cmd, int repeat) {
     static const int ADB_CODES[ANYTV_CMD_COUNT] = {
         19, 20, 21, 22, 23, 4, 3, 82,
         24, 25, 91, 85, 87, 88,
@@ -275,8 +275,15 @@ static int adb_cmd(anytv_client *c, anytv_cmd cmd) {
         7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 219, 172
     };
     if ((int)cmd < 0 || cmd >= ANYTV_CMD_COUNT) return ADB_ERR_PROTOCOL;
-    char line[128];
-    anytv_keyevent_command(ADB_CODES[cmd], 1, line, sizeof(line));
+    /* Vários toques no mesmo comando vão numa chamada só: cada "input keyevent"
+     * custa a subida de um processo no aparelho, então agrupar economiza tempo. */
+    int times = repeat < 1 ? 1 : (repeat > 8 ? 8 : repeat);
+    char line[256];
+    snprintf(line, sizeof(line), "input keyevent %d", ADB_CODES[cmd]);
+    for (int i = 1; i < times; i++) {
+        size_t used = strlen(line);
+        snprintf(line + used, sizeof(line) - used, " %d", ADB_CODES[cmd]);
+    }
     return adb_run(c, line, 8000);
 }
 
@@ -315,7 +322,7 @@ int anytv_client_cmd(anytv_client *c, int cmd, int repeat) {
         if (rc != NET_OK) snprintf(c->error, sizeof(c->error), "Samsung recusou o comando");
         return rc == NET_OK ? 0 : ADB_ERR_IO;
     default:
-        return adb_cmd(c, (anytv_cmd)cmd);
+        return adb_cmd(c, (anytv_cmd)cmd, times);
     }
 }
 

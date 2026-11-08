@@ -9,10 +9,30 @@ struct DevicesView: View {
     @State private var found = 0
     @State private var message = ""
     @State private var showAdd = false
+    @State private var crashNote = ""
 
     var body: some View {
         NavigationStack {
             List {
+                if !crashNote.isEmpty {
+                    Section {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("O app fechou na última vez", systemImage: "exclamationmark.triangle.fill")
+                                .font(.subheadline.bold())
+                                .foregroundStyle(.orange)
+                            Text(crashNote)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Button("Dispensar") {
+                                CrashReporter.clear()
+                                crashNote = ""
+                            }
+                            .font(.caption)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
                 Section {
                     if store.devices.isEmpty {
                         Text("Nenhuma TV salva ainda.").foregroundStyle(.secondary)
@@ -71,6 +91,10 @@ struct DevicesView: View {
                     }
                 }
             }
+            .task {
+                let crash = CrashReporter.read()
+                if !crash.isEmpty { crashNote = crash.trimmingCharacters(in: .whitespacesAndNewlines) }
+            }
             .navigationTitle("Controle TV")
             .navigationDestination(for: TVDevice.self) { device in
                 RemoteView(device: device)
@@ -97,6 +121,10 @@ struct DevicesView: View {
                 Section {
                     Text(manualProto.setup).font(.footnote).foregroundStyle(.secondary)
                 }
+            }
+            .task {
+                let crash = CrashReporter.read()
+                if !crash.isEmpty { crashNote = crash.trimmingCharacters(in: .whitespacesAndNewlines) }
             }
             .navigationTitle("Adicionar TV")
             .toolbar {
