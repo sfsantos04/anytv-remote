@@ -22,9 +22,9 @@ struct PhotoRemoteScreen: View {
 
     @State private var wantKeyboard = false
 
-    private var art: (name: String, keys: [HotKey]) {
-        proto == .tizen ? ("samsung.jpg", RemoteArt.samsung)
-                       : ("android.jpg", RemoteArt.android)
+    private var art: (name: String, size: CGSize, keys: [HotKey]) {
+        proto == .tizen ? ("samsung.jpg", RemoteArt.base, RemoteArt.samsung)
+                        : ("android.jpg", RemoteArt.androidBase, RemoteArt.android)
     }
 
     var body: some View {
@@ -54,7 +54,7 @@ struct PhotoRemoteScreen: View {
     private var photoRemote: some View {
         ZStack(alignment: .topLeading) {
             PhotoRemote(imageName: art.name,
-                        imageSize: RemoteArt.base,
+                        imageSize: art.size,
                         keys: art.keys,
                         special: handleSpecial) { cmd, label in
                 status = label

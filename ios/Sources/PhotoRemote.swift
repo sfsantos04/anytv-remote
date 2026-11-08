@@ -20,8 +20,6 @@ struct PhotoRemote: View {
     var special: (String) -> Void = { _ in }
     let onCommand: (Cmd, String) -> Void
 
-    @State private var pressed: String?
-
     var body: some View {
         GeometryReader { geo in
             let scale = max(geo.size.width / imageSize.width,
@@ -43,28 +41,15 @@ struct PhotoRemote: View {
                     let x = origin.x + k.box.minX * scale
                     let y = origin.y + k.box.minY * scale
 
-                    RoundedRectangle(cornerRadius: min(w, h) * k.corner, style: .continuous)
-                        .fill(Color.white.opacity(pressed == k.id ? 0.20 : 0.001))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: min(w, h) * k.corner, style: .continuous)
-                                .stroke(Color.white.opacity(pressed == k.id ? 0.55 : 0), lineWidth: 2)
-                        )
-                        .frame(width: w, height: h)
-                        .offset(x: x, y: y)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                            if let cmd = k.cmd {
-                                onCommand(cmd, k.id)
-                            } else {
-                                special(k.id)
-                            }
-                            withAnimation(.easeOut(duration: 0.12)) { pressed = k.id }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                                if pressed == k.id { withAnimation(.easeIn(duration: 0.15)) { pressed = nil } }
-                            }
+                    PressZone(id: k.id, width: w, height: h, corner: min(w, h) * k.corner) {
+                        if let cmd = k.cmd {
+                            onCommand(cmd, k.id)
+                        } else {
+                            special(k.id)
                         }
-                        .accessibilityLabel(k.id)
+                    }
+                    .offset(x: x, y: y)
+                    .accessibilityLabel(k.id)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
@@ -75,7 +60,9 @@ struct PhotoRemote: View {
 }
 
 enum RemoteArt {
-    static let base = CGSize(width: 1280, height: 2660)   // render original (2x)
+    static let base = CGSize(width: 1280, height: 2660)      // render da Samsung
+    static let androidBase = CGSize(width: 980, height: 2580) // Android recortado
+    static let androidCrop = CGPoint(x: 150, y: 40)
 
     /// Carrega a imagem do controle direto do bundle, com fallback pelo caminho
     /// do arquivo (Image(named:) falha quando o recurso vem solto no pacote).
@@ -137,7 +124,16 @@ enum RemoteArt {
     }()
 
     /// Camadas de toque do Android (TCL), nas mesmas coordenadas.
-    static let android: [HotKey] = [
+    static let android: [HotKey] = androidRaw.map { k in
+        var m = k
+        m = HotKey(id: k.id,
+                   box: k.box.offsetBy(dx: -androidCrop.x, dy: -androidCrop.y),
+                   corner: k.corner,
+                   cmd: k.cmd)
+        return m
+    }
+
+    private static let androidRaw: [HotKey] = [
         HotKey(id: "power", box: CGRect(x: 270, y: 230, width: 160, height: 150), cmd: .power),
         HotKey(id: "ajustes", box: CGRect(x: 850, y: 230, width: 160, height: 150), cmd: .settings),
         HotKey(id: "cima", box: CGRect(x: 552, y: 522, width: 176, height: 176), cmd: .up),
@@ -158,4 +154,46 @@ enum RemoteArt {
         HotKey(id: "netflix", box: CGRect(x: 270, y: 1600, width: 370, height: 120)),
         HotKey(id: "globoplay", box: CGRect(x: 640, y: 1600, width: 370, height: 120))
     ]
+}
+
+
+/// Área de toque com afundamento e vibração: responde no encostar, não no soltar.
+struct PressZone: View {
+    let id: String
+    let width: CGFloat
+    let height: CGFloat
+    let corner: CGFloat
+    let action: () -> Void
+
+    @GestureState private var down = false
+    @State private var fired = false
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: corner, style: .continuous)
+            .fill(Color.white.opacity(down ? 0.26 : 0.001))
+            .overlay(
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .stroke(Color.white.opacity(down ? 0.70 : 0), lineWidth: down ? 2.5 : 0)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .stroke(Color.black.opacity(down ? 0.40 : 0), lineWidth: down ? 4 : 0)
+                    .blur(radius: 3)
+            )
+            .frame(width: width, height: height)
+            .scaleEffect(down ? 0.96 : 1)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .updating($down) { _, state, _ in state = true }
+                    .onChanged { _ in
+                        guard !fired else { return }
+                        fired = true
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        action()
+                    }
+                    .onEnded { _ in fired = false }
+            )
+            .animation(.easeOut(duration: 0.08), value: down)
+    }
 }
