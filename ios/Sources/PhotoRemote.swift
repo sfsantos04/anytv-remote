@@ -62,7 +62,7 @@ struct PhotoRemote: View {
 }
 
 enum RemoteArt {
-    static let base = CGSize(width: 1220, height: 2520)      // Samsung recortada
+    static let base = CGSize(width: 1220, height: 2548)      // Samsung recortada
     static let samsungCrop = CGPoint(x: 30, y: 40)
     static let androidBase = CGSize(width: 980, height: 1760) // Android recortado
     static let androidCrop = CGPoint(x: 150, y: 40)
@@ -125,7 +125,9 @@ enum RemoteArt {
             HotKey(id: "ch+", box: CGRect(x: 1280 - 252 - 93, y: 2182, width: 186, height: 145),
                    corner: 0.45, cmd: .chUp),
             HotKey(id: "ch-", box: CGRect(x: 1280 - 252 - 93, y: 2327, width: 186, height: 145),
-                   corner: 0.45, cmd: .chDown)
+                   corner: 0.45, cmd: .chDown),
+            // mudo no vão entre os balancins
+            HotKey(id: "mudo", box: box(640, 2330, 104), corner: 0.5, cmd: .mute)
         ]
         keys.append(contentsOf: [])
         return keys

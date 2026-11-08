@@ -257,7 +257,16 @@ struct RemoteView: View {
             store.update(updated)
         } catch {
             connected = false
-            status = "Nao conectou: \(error.localizedDescription)"
+            let raw = error.localizedDescription.lowercased()
+            if raw.contains("handshake") || raw.contains("read failed") {
+                status = device.proto == .adb
+                    ? "O ADB do aparelho nao respondeu. Desligue e ligue a Depuracao USB, ou reinicie o aparelho."
+                    : "A TV nao completou o handshake. Confira se ela esta ligada e na mesma rede."
+            } else if raw.contains("caiu") || raw.contains("nao conectado") {
+                status = "Conexao caiu. Toque em Conectar para tentar de novo."
+            } else {
+                status = "Nao conectou: \(error.localizedDescription)"
+            }
         }
     }
 }
