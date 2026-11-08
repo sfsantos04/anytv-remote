@@ -73,6 +73,8 @@ int anytv_client_info(anytv_client *c, char *out, size_t outlen);
 int anytv_client_details(anytv_client *c, char *out, size_t outlen);
 /* Ping de sessao (Tizen/webOS). Chame a cada ~25 s. */
 int anytv_client_keepalive(anytv_client *c);
+/* 1 quando o aparelho permite injetar teclas por root (sendevent). */
+int anytv_client_probe_root(anytv_client *c, char *out, size_t outlen);
 int anytv_client_wake(anytv_client *c);
 int anytv_client_power_on(anytv_client *c);   /* Wake-on-LAN */
 int anytv_client_sleep(anytv_client *c);      /* power off / sleep */

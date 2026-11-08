@@ -252,6 +252,11 @@ struct RemoteView: View {
             } else if device.proto == .tizen || device.proto == .webos {
                 status += " Sem token salvo: a TV vai pedir Permitir agora."
             }
+            if device.proto == .adb {
+                if let probe = try? await client.shell("id; which su; ls /dev/input 2>/dev/null | head -8") {
+                    Diagnostics.note("ADB probe: " + probe.replacingOccurrences(of: "\n", with: " | "))
+                }
+            }
             let mac = client.discoveredMac()
             if !mac.isEmpty { updated.mac = mac }
             store.update(updated)

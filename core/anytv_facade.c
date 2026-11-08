@@ -957,6 +957,18 @@ int anytv_client_screenshot(anytv_client *c, uint8_t *out, size_t outlen) {
     return got;
 }
 
+/* Diz se da para injetar teclas por root (sendevent) neste aparelho:
+ * devolve 1 quando "su" existe e ha um dispositivo de entrada legivel. */
+int anytv_client_probe_root(anytv_client *c, char *out, size_t outlen) {
+    if (!c || c->proto != ANYTV_PROTO_ADB || !c->connected) return 0;
+    if (out && outlen) out[0] = 0;
+    char tmp[2048];
+    int code = adb_shell(&c->conn, "su -c 'ls /dev/input' 2>/dev/null", tmp, sizeof(tmp), 6000);
+    if (code < 0 || !strstr(tmp, "event")) return 0;
+    if (out && outlen) snprintf(out, outlen, "%s", tmp);
+    return 1;
+}
+
 /* Mantem a sessao viva: a TV derruba websocket ocioso e a reconexao seguinte
  * pode exigir autorizacao de novo. */
 int anytv_client_keepalive(anytv_client *c) {
