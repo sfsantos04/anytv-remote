@@ -278,13 +278,16 @@ static int adb_cmd(anytv_client *c, anytv_cmd cmd, int repeat) {
     /* Vários toques no mesmo comando vão numa chamada só: cada "input keyevent"
      * custa a subida de um processo no aparelho, então agrupar economiza tempo. */
     int times = repeat < 1 ? 1 : (repeat > 8 ? 8 : repeat);
-    char line[256];
+    char line[320];
     snprintf(line, sizeof(line), "input keyevent %d", ADB_CODES[cmd]);
     for (int i = 1; i < times; i++) {
         size_t used = strlen(line);
         snprintf(line + used, sizeof(line) - used, " %d", ADB_CODES[cmd]);
     }
-    return adb_run(c, line, 8000);
+    /* canal reaproveitado, sem esperar resposta: o toque sai na hora */
+    int rc = adb_key_line(&c->conn, line, 2500);
+    if (rc != ADB_OK) snprintf(c->error, sizeof(c->error), "%s", c->conn.last_error_text);
+    return rc == ADB_OK ? 0 : rc;
 }
 
 int anytv_client_cmd(anytv_client *c, int cmd, int repeat) {

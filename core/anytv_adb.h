@@ -35,6 +35,10 @@ typedef struct {
     uint8_t *raw_left;
     uint32_t raw_left_len;
     uint32_t raw_left_off;
+    /* canal persistente para teclas: evita abrir/fechar servico a cada toque */
+    uint32_t key_lid;
+    uint32_t key_rid;
+    int key_open;
 } adb_conn;
 
 #define ADB_OK 0
@@ -55,6 +59,9 @@ void adb_close(adb_conn *c);
 /* Run a shell command; writes up to outlen bytes (always NUL terminated when outlen>0).
  * Returns the exit code, or a negative ADB_ERR_*. */
 int adb_shell(adb_conn *c, const char *command, char *out, size_t outlen, int timeout_ms);
+/* Injeta uma linha de shell sem esperar o fim: usa um canal aberto uma vez.
+ * Cai para adb_shell se o canal nao puder ser aberto. */
+int adb_key_line(adb_conn *c, const char *line, int timeout_ms);
 
 /* Opens any service and captures everything it writes as text (sdb, for one,
  * answers on "shell:0 <command>"). Returns 0 or a negative ADB_ERR_*. */

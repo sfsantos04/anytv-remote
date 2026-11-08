@@ -480,6 +480,48 @@ static int drain_stream(adb_conn *c, uint32_t lid, uint32_t rid, char *out, size
 }
 
 /* Legacy (non shell_v2) framing carries raw bytes. */
+/* Esvazia o que o aparelho mandou sem bloquear; devolve OKAY dos WRTE. */
+static void key_drain(adb_conn *c, int budget_ms) {
+    uint8_t *payload = (uint8_t *)malloc(ADB_MAX_PAYLOAD + 16);
+    if (!payload) return;
+    int wait = budget_ms;
+    for (;;) {
+        msg_hdr h;
+        int r = read_msg(c, &h, payload, ADB_MAX_PAYLOAD, wait);
+        if (r != ADB_OK) break;
+        if (h.cmd == A_WRTE && h.a1 == c->key_lid) {
+            send_msg(c, A_OKAY, c->key_lid, c->key_rid, NULL, 0);
+        } else if (h.cmd == A_CLSE && h.a1 == c->key_lid) {
+            c->key_open = 0;
+            break;
+        }
+        wait = 5;   /* depois do primeiro, só o que já está no buffer */
+    }
+    free(payload);
+}
+
+/* Teclas por um canal de shell aberto uma vez e reaproveitado. Cada "input
+ * keyevent" custa um processo no aparelho; abrir e fechar servico a cada toque
+ * somava mais uma ida e volta em cima disso. Sem esperar resposta, o toque
+ * aparece na hora e o aparelho processa na ordem. */
+int adb_key_line(adb_conn *c, const char *line, int timeout_ms) {
+    if (!c || c->fd < 0) return ADB_ERR_IO;
+    if (!c->key_open) {
+        int rc = open_service(c, "shell,v2,raw:", &c->key_lid, &c->key_rid, timeout_ms);
+        if (rc != ADB_OK) return adb_shell(c, line, NULL, 0, timeout_ms);
+        c->key_open = 1;
+    }
+    key_drain(c, 4);
+    char buf[512];
+    int n = snprintf(buf, sizeof(buf), "%s\n", line);
+    if (n <= 0 || send_msg(c, A_WRTE, c->key_lid, c->key_rid, (uint8_t *)buf,
+                           (uint32_t)n) != ADB_OK) {
+        c->key_open = 0;
+        return adb_shell(c, line, NULL, 0, timeout_ms);
+    }
+    return ADB_OK;
+}
+
 int adb_shell(adb_conn *c, const char *command, char *out, size_t outlen, int timeout_ms) {
     /* socket morto nao pode virar comando: era o caminho do fechamento do app
      * quando o adbd do aparelho travava no meio do uso */

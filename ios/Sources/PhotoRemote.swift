@@ -105,8 +105,8 @@ enum RemoteArt {
         }
         var keys: [HotKey] = [
             HotKey(id: "power", box: box(252, 420, 144), cmd: .power),
-            HotKey(id: "123", box: box(252, 860, 154)),
-            HotKey(id: "extra", box: box(1280 - 252, 860, 154)),
+            HotKey(id: "123", box: box(252, 860, 144)),
+            HotKey(id: "extra", box: box(1280 - 252, 860, 144)),
             // roda: 4 bordas + OK
             HotKey(id: "up", box: box(640, 1460 - 226, 112), corner: 0.5, cmd: .up),
             HotKey(id: "down", box: box(640, 1460 + 226, 112), corner: 0.5, cmd: .down),

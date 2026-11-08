@@ -169,23 +169,20 @@ struct PhotoRemoteScreen: View {
     // MARK: - Folhas
 
     private var numberSheet: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             HStack {
                 Text("Teclado").font(.headline)
                 Spacer()
                 Button("Fechar") { showNumbers = false }
             }
-            ForEach([[1, 2, 3], [4, 5, 6], [7, 8, 9]], id: \.self) { line in
-                HStack(spacing: 12) {
-                    ForEach(line, id: \.self) { d in
-                        digitButton(d)
-                    }
-                }
-            }
-            HStack(spacing: 12) {
-                sideButton("CH-") { send(.chDown) }
+
+            // grade de 3 colunas: todas as teclas com o mesmo tamanho
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
+                      spacing: 12) {
+                ForEach(1...9, id: \.self) { d in digitButton(d) }
+                wideButton("CH-") { send(.chDown) }
                 digitButton(0)
-                sideButton("CH+") { send(.chUp) }
+                wideButton("CH+") { send(.chUp) }
             }
             Spacer(minLength: 0)
         }
@@ -197,24 +194,28 @@ struct PhotoRemoteScreen: View {
         let cmd = Cmd(rawValue: Cmd.num0.rawValue + Int32(d)) ?? .num0
         return Button { send(cmd) } label: {
             Text("\(d)")
-                .font(.system(size: 24))
+                .font(.system(size: 26, weight: .regular, design: .rounded))
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+                .frame(height: 62)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.secondarySystemBackground)))
         }
+        .buttonStyle(KeyPress())
         .accessibilityLabel("Número \(d)")
     }
 
-    private func sideButton(_ label: String, action: @escaping () -> Void) -> some View {
+    private func wideButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 15, weight: .medium))
+            Text(title)
+                .font(.system(size: 16, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
-                .frame(height: 56)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color(.tertiarySystemBackground)))
+                .frame(height: 62)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(.tertiarySystemBackground)))
         }
+        .buttonStyle(KeyPress())
     }
 
     private var extraSheet: some View {
@@ -251,16 +252,6 @@ struct PhotoRemoteScreen: View {
         .accessibilityLabel(label)
     }
 
-    private func wideButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 14, weight: .medium))
-                .frame(maxWidth: .infinity)
-                .frame(height: 46)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color(.secondarySystemBackground)))
-        }
-    }
-
     private var textSheet: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -295,5 +286,15 @@ struct PhotoRemoteScreen: View {
     private func send(_ cmd: Cmd) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
         Task { try? await client.send(cmd) }
+    }
+}
+
+/// Tecla que afunda ao toque, para os painéis.
+struct KeyPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
     }
 }
