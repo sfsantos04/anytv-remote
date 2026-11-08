@@ -351,7 +351,7 @@ final class TVClient: ObservableObject, @unchecked Sendable {
     /// Starts scrcpy: pushes the bundled server jar to the TV, runs it there and
     /// opens the video socket. Better frame rate than screenrecord and works from
     /// Android 5.0 up.
-    func scrcpyStart(bitrate: Int = 8_000_000, maxFPS: Int = 60, maxSize: Int = 0,
+    func scrcpyStart(bitrate: Int = 4_000_000, maxFPS: Int = 30, maxSize: Int = 1024,
                      seconds: Int = 180) async throws -> (width: Int, height: Int) {
         guard let jarURL = Bundle.main.url(forResource: "scrcpy-server", withExtension: "jar"),
               let jar = try? Data(contentsOf: jarURL) else {

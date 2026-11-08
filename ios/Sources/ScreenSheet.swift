@@ -11,6 +11,7 @@ struct ScreenSheet: View {
     @StateObject private var player = H264StreamPlayer()
     @State private var image: UIImage?
     @State private var message = ""
+    @State private var quality = 0        // 0 leve, 1 normal, 2 alta
     @State private var live = true
     @State private var preferScrcpy = true
     @State private var auto = true
@@ -30,6 +31,18 @@ struct ScreenSheet: View {
                 if live { liveArea } else { snapshotArea }
                 if !message.isEmpty {
                     Text(message).font(.footnote).foregroundStyle(.secondary)
+                }
+                if live {
+                    Picker("Qualidade", selection: $quality) {
+                        Text("Leve").tag(0)
+                        Text("Normal").tag(1)
+                        Text("Alta").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: quality) { _ in restartLive() }
+                    Text("Se a TV engasgar ao abrir, use Leve: o encoder do aparelho é o gargalo.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 controls
                 Text("O áudio não vem junto: o encoder do sistema só entrega vídeo. Em Android 11+ o caminho é o servidor do scrcpy; neste Android 7 seria preciso root com captura ALSA.")
@@ -138,9 +151,14 @@ struct ScreenSheet: View {
                 var started = false
                 if useScrcpy {
                     do {
-                        let size = try await client.scrcpyStart()
+                        let preset: (Int, Int, Int) = quality == 0 ? (1_500_000, 15, 480)
+                                                 : quality == 1 ? (3_000_000, 24, 720)
+                                                                : (5_000_000, 30, 1024)
+                        let size = try await client.scrcpyStart(bitrate: preset.0,
+                                                                maxFPS: preset.1,
+                                                                maxSize: preset.2)
                         message = "Ao vivo via scrcpy · \(size.width)x\(size.height)"
-                        Diagnostics.note("scrcpy ok \(size.width)x\(size.height)")
+                        Diagnostics.note("scrcpy ok \(size.width)x\(size.height) @30fps 1024")
                         started = true
                     } catch {
                         useScrcpy = false

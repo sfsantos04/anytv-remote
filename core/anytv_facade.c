@@ -861,9 +861,10 @@ int anytv_client_scrcpy_start(anytv_client *c, const uint8_t *jar, size_t jar_le
     adb_shell(&c->conn, "pkill -f com.genymobile.scrcpy 2>/dev/null; sleep 0.2",
               probe, sizeof(probe), 5000);
 
-    if (bitrate_bps < 500000) bitrate_bps = 8000000;
-    if (max_fps < 1) max_fps = 60;
-    if (max_size < 0) max_size = 0;
+    if (bitrate_bps < 500000) bitrate_bps = 4000000;
+    if (max_fps < 1) max_fps = 30;
+    /* Resolucao nativa em box fraco trava o aparelho inteiro: teto de 1024. */
+    if (max_size <= 0 || max_size > 1280) max_size = 1024;
     snprintf(cmd, sizeof(cmd),
              "nohup env CLASSPATH=%s app_process / com.genymobile.scrcpy.Server 1.25 "
              "log_level=info max_size=%d bit_rate=%d max_fps=%d tunnel_forward=true "
