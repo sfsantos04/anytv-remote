@@ -11,7 +11,7 @@ static const char *WEBOS_BUTTON[ANYTV_CMD_COUNT] = {
     "VOLUMEUP", "VOLUMEDOWN", "MUTE", "PLAY", "FF", "REW",
     "STOP", "REW", "FF", "POWER", "INFO", "MENU", "INPUT_HUB",
     "CHANNELUP", "CHANNELDOWN", "RED", "GREEN", "YELLOW", "BLUE",
-    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "MENU"
+    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "MENU", "GUIDE"
 };
 
 static int request_id = 0;

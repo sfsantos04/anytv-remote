@@ -272,7 +272,7 @@ static int adb_cmd(anytv_client *c, anytv_cmd cmd) {
         24, 25, 91, 85, 87, 88,
         86, 89, 90, 26, 165, 176, 178, 166, 167,
         186, 184, 185, 183,
-        7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 219
+        7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 219, 172
     };
     if ((int)cmd < 0 || cmd >= ANYTV_CMD_COUNT) return ADB_ERR_PROTOCOL;
     char line[128];

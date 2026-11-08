@@ -17,7 +17,7 @@ static const char *TIZEN_KEY[ANYTV_CMD_COUNT] = {
     "KEY_INFO", "KEY_TOOLS", "KEY_SOURCE", "KEY_CHUP", "KEY_CHDOWN",
     "KEY_RED", "KEY_GREEN", "KEY_YELLOW", "KEY_BLUE",
     "KEY_0", "KEY_1", "KEY_2", "KEY_3", "KEY_4",
-    "KEY_5", "KEY_6", "KEY_7", "KEY_8", "KEY_9", "KEY_MENU"
+    "KEY_5", "KEY_6", "KEY_7", "KEY_8", "KEY_9", "KEY_MENU", "KEY_GUIDE"
 };
 
 uint32_t tizen_caps(void) {

@@ -15,6 +15,7 @@ struct RemoteView: View {
     @State private var appsAvailable = false
     @State private var showKeyboard = false
     @FocusState private var typing: Bool
+    @Environment(\.dismiss) private var dismiss
 
     init(device: TVDevice) {
         self.device = device
@@ -22,35 +23,11 @@ struct RemoteView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                header
-                statusBar
-                if device.proto == .tizen {
-                    // formato do controle original da Samsung
-                    RemotePad3D(client: client, title: info.isEmpty ? "Samsung" : info)
-                        .padding(.top, 6)
-                } else if device.proto == .adb {
-                    // formato do controle do TCL/Android TV
-                    AndroidPad(client: client, title: info.isEmpty ? "Android" : info,
-                               wantKeyboard: $showKeyboard)
-                        .padding(.top, 6)
-                } else {
-                    dpad
-                    controlRow([("VOL-", .volDown), ("MUTE", .mute), ("VOL+", .volUp)])
-                    controlRow([("MENU", .menu), ("HOME", .home), ("BACK", .back)])
-                    controlRow([("|<", .prev), ("PLAY", .playPause), (">|", .next)])
-                    controlRow([("ENTRADA", .input), ("INFO", .info), ("AJUSTES", .settings)])
-                    powerRow
-                }
-                if client.supports(Cap.text) { textInput }
-                Spacer(minLength: 8)
-            }
-            .padding()
-        }
+        content
         .onChange(of: showKeyboard) { _ in typing = true }
         .navigationTitle(device.label)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(device.proto == .tizen ? .hidden : .visible, for: .navigationBar)
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 if appsAvailable || client.supports(Cap.apps) {
@@ -85,6 +62,42 @@ struct RemoteView: View {
         // A sessao NAO e fechada ao sair da tela: medido que cada conexao nova
         // sem token cria um cliente novo na TV e faz ela pedir "Permitir".
         // Um unico cliente vivo por aparelho (o pool) mantem a autorizacao.
+    }
+
+
+    /// Samsung usa a tela cheia clara; os outros protocolos seguem na lista.
+    @ViewBuilder
+    private var content: some View {
+        if device.proto == .tizen {
+            SamsungRemote(client: client,
+                          title: info.isEmpty ? "Samsung" : info,
+                          canApps: appsAvailable || client.supports(Cap.apps),
+                          canScreen: client.supports(Cap.screen),
+                          onClose: { dismiss() })
+        } else {
+        ScrollView {
+            VStack(spacing: 14) {
+                header
+                statusBar
+                if device.proto == .adb {
+                    // formato do controle do TCL/Android TV
+                    AndroidPad(client: client, title: info.isEmpty ? "Android" : info,
+                               wantKeyboard: $showKeyboard)
+                        .padding(.top, 6)
+                } else {
+                    dpad
+                    controlRow([("VOL-", .volDown), ("MUTE", .mute), ("VOL+", .volUp)])
+                    controlRow([("MENU", .menu), ("HOME", .home), ("BACK", .back)])
+                    controlRow([("|<", .prev), ("PLAY", .playPause), (">|", .next)])
+                    controlRow([("ENTRADA", .input), ("INFO", .info), ("AJUSTES", .settings)])
+                    powerRow
+                }
+                if client.supports(Cap.text) { textInput }
+                Spacer(minLength: 8)
+            }
+            .padding()
+        }
+        }
     }
 
     private var header: some View {

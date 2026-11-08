@@ -9,7 +9,7 @@ static const char *CMD_NAMES[ANYTV_CMD_COUNT] = {
     "STOP", "REWIND", "FORWARD", "POWER", "INFO", "SETTINGS", "INPUT",
     "CH_UP", "CH_DOWN", "RED", "GREEN", "YELLOW", "BLUE",
     "NUM_0", "NUM_1", "NUM_2", "NUM_3", "NUM_4",
-    "NUM_5", "NUM_6", "NUM_7", "NUM_8", "NUM_9", "VOICE"
+    "NUM_5", "NUM_6", "NUM_7", "NUM_8", "NUM_9", "VOICE", "GUIDE"
 };
 
 const char *anytv_cmd_name(anytv_cmd cmd) {
