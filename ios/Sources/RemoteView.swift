@@ -74,7 +74,7 @@ struct RemoteView: View {
                               canApps: appsAvailable || client.supports(Cap.apps),
                               canScreen: client.supports(Cap.screen),
                               connected: connected,
-                              status: status,
+                              connectionStatus: status,
                               onRetry: { Task { await connect() } },
                               onClose: { dismiss() })
         } else {

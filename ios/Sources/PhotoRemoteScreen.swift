@@ -10,11 +10,10 @@ struct PhotoRemoteScreen: View {
     var canApps: Bool
     var canScreen: Bool
     var connected: Bool
-    var status: String
+    var connectionStatus: String
     var onRetry: () -> Void
     var onClose: () -> Void
 
-    @State private var status = ""
     @State private var showApps = false
     @State private var showScreen = false
     @State private var showDiag = false
@@ -59,8 +58,7 @@ struct PhotoRemoteScreen: View {
             PhotoRemote(imageName: art.name,
                         imageSize: art.size,
                         keys: art.keys,
-                        special: handleSpecial) { cmd, label in
-                status = label
+                        special: handleSpecial) { cmd, _ in
                 Task { try? await client.send(cmd) }
             }
 
@@ -82,9 +80,9 @@ struct PhotoRemoteScreen: View {
                 Button { onRetry() } label: {
                     HStack(spacing: 5) {
                         Circle()
-                            .fill(connected ? Color.green : (status.lowercased().contains("conect") ? Color.orange : Color.red))
+                            .fill(connected ? Color.green : (connectionStatus.lowercased().contains("conect") ? Color.orange : Color.red))
                             .frame(width: 7, height: 7)
-                        Text(connected ? "Conectado" : (status.isEmpty ? "Sem conexão" : status))
+                        Text(connected ? "Conectado" : (connectionStatus.isEmpty ? "Sem conexão" : connectionStatus))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.white.opacity(0.85))
                             .lineLimit(1)
@@ -122,7 +120,7 @@ struct PhotoRemoteScreen: View {
             if !connected {
                 VStack(spacing: 10) {
                     Text("Sem conexão").font(.headline)
-                    Text(status.isEmpty ? "Tocando em Conectar o app tenta de novo." : status)
+                    Text(connectionStatus.isEmpty ? "Tocando em Conectar o app tenta de novo." : connectionStatus)
                         .font(.caption)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.secondary)
@@ -160,7 +158,6 @@ struct PhotoRemoteScreen: View {
 
     private func launch(_ needle: String, _ label: String) {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        status = label
         Task {
             guard let apps = try? await client.apps() else { return }
             let target = apps.first { $0.name.lowercased().contains(needle) }
@@ -297,7 +294,6 @@ struct PhotoRemoteScreen: View {
 
     private func send(_ cmd: Cmd) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        status = ""
         Task { try? await client.send(cmd) }
     }
 }

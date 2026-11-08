@@ -28,9 +28,9 @@ enum CrashReporter {
         localtime_r(&stamp, &tmv)
         var buffer = [CChar](repeating: 0, count: 256)
         let n = strftime(&buffer, buffer.count, "%Y-%m-%dT%H:%M:%S ", &tmv)
-        if n > 0 { _ = write(fd, buffer, n) }
-        text.withCString { _ = write(fd, $0, Int(strlen($0))) }
-        _ = write(fd, "\n", 1)
+        if n > 0 { _ = Darwin.write(fd, buffer, n) }
+        text.withCString { _ = Darwin.write(fd, $0, Int(strlen($0))) }
+        _ = Darwin.write(fd, "\n", 1)
         fsync(fd)
     }
 
